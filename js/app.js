@@ -1,0 +1,3144 @@
+// Store loaded via script tag
+
+class App {
+    constructor() {
+        this.container = document.getElementById('app-container');
+        this.title = document.getElementById('page-title');
+        this.currentDate = new Date();
+        this.calendarDate = new Date(); // To track calendar month view
+        this.selectedDateStr = null;
+
+        store.init();
+        this.renderDashboard(); // Default view
+
+        // Expose navigate globally for onclick handlers
+        window.app = this;
+    }
+
+    navigate(view) {
+        // Update styling for nav items
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+        // Simple way to highlight active nav based on onclick attribute match
+        const activeNav = document.querySelector(`.nav-item[onclick*="'${view}'"]`);
+        if (activeNav) activeNav.classList.add('active');
+
+        switch (view) {
+            case 'dashboard':
+                this.renderDashboard();
+                break;
+            case 'new':
+                this.renderNewForm();
+                break;
+            case 'stats':
+                this.renderStats();
+                break;
+            case 'settings':
+                this.renderSettings();
+                break;
+            case 'day':
+                this.renderDayView();
+                break;
+            case 'print':
+                this.renderPrintView();
+                break;
+            default:
+                this.renderDashboard();
+        }
+    }
+
+    renderDashboard() {
+        this.title.textContent = 'Inicio';
+
+        // Show the header button
+        const headerButton = document.querySelector('.user-profile');
+        if (headerButton) headerButton.style.display = 'block';
+
+        const stats = store.getStats();
+
+        // Determine which date to show substitutions for
+        const displayDate = this.selectedDateStr || new Date().toISOString().split('T')[0];
+        const subsToShow = store.state.substitutions.filter(s => s.date === displayDate);
+        
+        // Agrupar sustituciones por profesor
+        const teachersWithSubs = this.groupSubstitutionsByTeacher(subsToShow, displayDate);
+
+        this.container.innerHTML = `
+            <div class="dashboard-layout">
+                <div class="dashboard-top" style="display: flex; flex-direction: column; align-items: center; gap: 1.5rem;">
+                <div class="dashboard-sidebar" style="width: 280px;">
+                    <div class="calendar-container" style="background: white; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); padding: 1.25rem; width: 280px !important;">
+                        <div class="calendar-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 2px solid #f3f4f6;">
+                            <button class="calendar-nav-btn" onclick="app.changeMonth(-1)" style="background: #f3f4f6; border: none; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-size: 1rem; color: #4b5563;">
+                                <i class="ph ph-caret-left" style="font-weight: bold;"></i>
+                            </button>
+                            <div class="calendar-title" id="calendar-title" style="font-size: 1.1rem; font-weight: 700; color: #1f2937; text-transform: capitalize; letter-spacing: 0.5px;">
+                                <!-- Month Year -->
+                            </div>
+                            <button class="calendar-nav-btn" onclick="app.changeMonth(1)" style="background: #f3f4f6; border: none; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; font-size: 1rem; color: #4b5563;">
+                                <i class="ph ph-caret-right" style="font-weight: bold;"></i>
+                            </button>
+                        </div>
+                        <div class="calendar-grid" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-bottom: 0.5rem;">
+                            <div class="calendar-weekday" style="text-align: center; padding: 0.5rem 0.25rem; font-size: 0.8rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">L</div>
+                            <div class="calendar-weekday" style="text-align: center; padding: 0.5rem 0.25rem; font-size: 0.8rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">M</div>
+                            <div class="calendar-weekday" style="text-align: center; padding: 0.5rem 0.25rem; font-size: 0.8rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">X</div>
+                            <div class="calendar-weekday" style="text-align: center; padding: 0.5rem 0.25rem; font-size: 0.8rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">J</div>
+                            <div class="calendar-weekday" style="text-align: center; padding: 0.5rem 0.25rem; font-size: 0.8rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;">V</div>
+                            <div class="calendar-weekday" style="text-align: center; padding: 0.5rem 0.25rem; font-size: 0.8rem; font-weight: 600; color: #ef4444; text-transform: uppercase; letter-spacing: 0.5px;">S</div>
+                            <div class="calendar-weekday" style="text-align: center; padding: 0.5rem 0.25rem; font-size: 0.8rem; font-weight: 600; color: #ef4444; text-transform: uppercase; letter-spacing: 0.5px;">D</div>
+                        </div>
+                        <div class="calendar-grid" id="calendar-days" style="display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px;"></div>
+                        ${this.selectedDateStr ? `<button class="btn" style="width:100%; margin-top:0.75rem; padding: 0.6rem; font-size:0.8rem; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 600; transition: transform 0.2s, box-shadow 0.2s;" onclick="app.clearSelection()">Ver Hoy</button>` : ''}
+                    </div>
+                </div>
+
+                <div class="dashboard-main" style="width: 100%; max-width: 900px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+                        <h3>Sustituciones: ${displayDate === new Date().toISOString().split('T')[0] ? 'Hoy' : displayDate}</h3>
+                        ${this.selectedDateStr ? `<button class="btn btn-primary" style="padding:0.4rem 0.8rem; font-size:0.8rem" onclick="app.startNewSubForDay('${displayDate}')">+ Registrar para este día</button>` : ''}
+                    </div>
+                    
+                    ${teachersWithSubs.length === 0 ? 
+                        `<div class="card" style="padding:2rem; text-align:center; color:var(--text-muted)">No hay sustituciones registradas para ${displayDate === new Date().toISOString().split('T')[0] ? 'hoy' : displayDate}.</div>` :
+                        `<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+                            ${teachersWithSubs.map(teacherData => this.renderMiniSubstitutionTable(teacherData, displayDate)).join('')}
+                        </div>`
+                    }
+                </div>
+            </div>
+        `;
+
+        this.renderCalendarDays();
+    }
+
+    groupSubstitutionsByTeacher(substitutions, date) {
+        const grouped = {};
+        
+        // Obtener todos los profesores que tienen sustituciones este día
+        substitutions.forEach(sub => {
+            if (!grouped[sub.teacherId]) {
+                grouped[sub.teacherId] = {
+                    teacher: store.state.teachers.find(t => String(t.id) === String(sub.teacherId)),
+                    substitutions: []
+                };
+            }
+            grouped[sub.teacherId].substitutions.push(sub);
+        });
+        
+        return Object.values(grouped).filter(g => g.teacher);
+    }
+
+    renderMiniSubstitutionTable(teacherData, date, showDeleteAll = false) {
+        const teacher = teacherData.teacher;
+        const teacherSubs = teacherData.substitutions;
+        const substitutionsCount = teacherSubs.length;
+        
+        // Definir los tramos horarios
+        const timeSlots = [
+            { start: '09:00', end: '09:30' },
+            { start: '09:30', end: '10:00' },
+            { start: '10:00', end: '10:30' },
+            { start: '10:30', end: '11:00' },
+            { start: '11:00', end: '11:30' },
+            { start: '11:30', end: '12:00' },
+            { start: '12:00', end: '12:30', isBreak: true },
+            { start: '12:30', end: '13:00' },
+            { start: '13:00', end: '13:30' },
+            { start: '13:30', end: '14:00' }
+        ];
+
+        // Generar filas compactas
+        const tableRows = timeSlots.map(slot => {
+            const timeRange = `${slot.start} - ${slot.end}`;
+            
+            const existingSub = teacherSubs.find(sub => 
+                sub.schedule && sub.schedule.some(s => s.time === timeRange)
+            );
+            
+            const scheduleItem = existingSub ? existingSub.schedule.find(s => s.time === timeRange) : null;
+            const substituteName = scheduleItem?.substitute;
+            const subId = existingSub?.id;
+
+            if (slot.isBreak) {
+                return `
+                    <tr style="background: #ffedd5;">
+                        <td style="padding: 0.4rem 0.6rem; font-size: 0.75rem; font-weight: 500; color: #9a3412; border-bottom: 1px solid #fed7aa;">${slot.start}-${slot.end}</td>
+                        <td style="padding: 0.4rem 0.6rem; font-size: 0.75rem; color: #c2410c; font-style: italic; border-bottom: 1px solid #fed7aa;">RECREO</td>
+                        <td style="padding: 0.4rem 0.6rem; font-size: 0.75rem; border-bottom: 1px solid #fed7aa;">-</td>
+                    </tr>
+                `;
+            }
+
+            const hasSub = !!substituteName;
+            const rowStyle = hasSub ? 'background: #f0fdf4;' : 'cursor: pointer;';
+            const rowOnClick = hasSub ? '' : `onclick="app.openSubstitutionFromDashboard('${teacher.id}', '${date}', '${slot.start}', '${slot.end}')"`;
+            const rowHover = hasSub ? '' : 'onmouseover="this.style.background=\'#f9fafb\'" onmouseout="this.style.background=\'\'"';
+
+            const substituteCell = hasSub 
+                ? `<div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+                     <span 
+                        style="font-size: 0.75rem; color: #166534; font-weight: 500; cursor: pointer; border-bottom: 1px dashed #166534; flex: 1;"
+                        onclick="event.stopPropagation(); app.editSubstitutionSlot('${teacher.id}', '${date}', '${slot.start}', '${slot.end}', ${subId})"
+                        title="Click para cambiar sustituto">${substituteName}</span>
+                     <button onclick="event.stopPropagation(); app.deleteSubstitutionFromDashboard(${subId}, '${teacher.id}', '${date}')" 
+                             style="background: none; border: none; cursor: pointer; color: #dc2626; padding: 0; flex-shrink: 0;">
+                         <i class="ph ph-trash" style="font-size: 0.875rem;"></i>
+                     </button>
+                   </div>`
+                : '<span style="font-size: 0.75rem; color: #9ca3af; font-style: italic;">-</span>';
+            
+            const courseSubject = scheduleItem?.courseGroup && scheduleItem?.subject
+                ? `<span style="font-size: 0.7rem; background: #ede9fe; color: #5b21b6; padding: 0.125rem 0.375rem; border-radius: 9999px;">${scheduleItem.courseGroup}/${scheduleItem.subject}</span>`
+                : '<span style="font-size: 0.75rem; color: #9ca3af;">-</span>';
+
+            return `
+                <tr style="${rowStyle}" ${rowOnClick} ${rowHover}>
+                    <td style="padding: 0.4rem 0.6rem; font-size: 0.75rem; font-weight: 500; color: #374151; border-bottom: 1px solid #e5e7eb; width: 80px;">${slot.start}</td>
+                    <td style="padding: 0.4rem 0.6rem; font-size: 0.75rem; border-bottom: 1px solid #e5e7eb;">${substituteCell}</td>
+                    <td style="padding: 0.4rem 0.6rem; font-size: 0.75rem; border-bottom: 1px solid #e5e7eb;">${courseSubject}</td>
+                </tr>
+            `;
+        }).join('');
+
+        const deleteAllButton = showDeleteAll 
+            ? `<button onclick="app.deleteAllSubstitutionsForTeacher('${teacher.id}', '${date}')" 
+                     style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 0.4rem 0.6rem; border-radius: 4px; cursor: pointer; font-size: 0.7rem; margin-left: 0.5rem;"
+                     title="Eliminar todas las sustituciones de este profesor">
+                 <i class="ph ph-trash"></i>
+               </button>`
+            : '';
+
+        return `
+            <div class="card" style="overflow: hidden;">
+                <div style="background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: white; padding: 0.75rem 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                            <i class="ph ph-user" style="font-size: 1.25rem;"></i>
+                            <div>
+                                <h4 style="margin: 0; font-size: 0.95rem; font-weight: 600;">${teacher.name}</h4>
+                                <p style="margin: 0; font-size: 0.7rem; opacity: 0.9;">${substitutionsCount} sustitución${substitutionsCount !== 1 ? 'es' : ''}</p>
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center;">
+                            ${!showDeleteAll ? `<button onclick="app.viewFullSubstitutionTable('${teacher.id}', '${date}')" 
+                                    style="background: rgba(255,255,255,0.2); border: none; color: white; padding: 0.4rem 0.6rem; border-radius: 4px; cursor: pointer; font-size: 0.7rem;">
+                                Ver completo
+                            </button>` : ''}
+                            ${deleteAllButton}
+                        </div>
+                    </div>
+                </div>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <thead>
+                        <tr style="background: #f9fafb;">
+                            <th style="padding: 0.4rem 0.6rem; font-size: 0.7rem; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb; text-align: left;">Hora</th>
+                            <th style="padding: 0.4rem 0.6rem; font-size: 0.7rem; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb; text-align: left;">Sust.</th>
+                            <th style="padding: 0.4rem 0.6rem; font-size: 0.7rem; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb; text-align: left;">Curso/Mat.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tableRows}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    openSubstitutionFromDashboard(teacherId, date, startTime, endTime) {
+        this.currentSubstitutionTeacherId = teacherId;
+        this.currentSubstitutionDate = date;
+        this.pendingTimeSlot = { start: startTime, end: endTime };
+        this.navigate('new');
+        
+        setTimeout(() => {
+            if (this.pendingTimeSlot) {
+                document.getElementById('start-time').value = this.pendingTimeSlot.start;
+                document.getElementById('end-time').value = this.pendingTimeSlot.end;
+                this.onTimeRangeChange();
+                this.pendingTimeSlot = null;
+            }
+        }, 100);
+    }
+
+    editSubstitutionSlot(teacherId, date, startTime, endTime, subId) {
+        // Buscar la sustitución existente
+        const sub = store.state.substitutions.find(s => s.id === subId);
+        if (!sub) return;
+        
+        // Cargar el formulario con los datos existentes
+        this.currentEditSubId = subId;
+        this.currentSubstitutionDate = date;
+        this.currentSubstitutionTeacherId = teacherId;
+        this.navigate('new');
+        
+        // Pre-llenar el formulario después de renderizar
+        setTimeout(() => {
+            if (sub.schedule && sub.schedule[0]) {
+                const slot = sub.schedule[0];
+                const [start, end] = slot.time.split(' - ');
+                
+                document.getElementById('sub-date').value = date;
+                document.getElementById('start-time').value = startTime || start;
+                document.getElementById('end-time').value = endTime || end;
+                document.getElementById('absent-teacher').value = teacherId;
+                document.getElementById('course-subject').value = slot.courseGroup && slot.subject 
+                    ? `${slot.courseGroup} - ${slot.subject}` 
+                    : (slot.courseGroup || '');
+                document.getElementById('reason').value = sub.reason || '';
+                
+                // Actualizar sustitutos disponibles
+                this.onNewSubDateChange();
+                this.onTimeRangeChange();
+                this.onAbsentTeacherChange();
+                
+                // Seleccionar el sustituto actual
+                if (slot.substitute) {
+                    const subTeacher = store.state.teachers.find(t => t.name === slot.substitute);
+                    if (subTeacher) {
+                        document.getElementById('substitute-teacher').value = subTeacher.id;
+                    }
+                }
+            }
+        }, 100);
+    }
+
+    deleteSubstitutionFromDashboard(subId, teacherId, date) {
+        if (confirm('¿Está seguro de que desea eliminar esta sustitución?')) {
+            const success = store.removeSubstitution(subId);
+            if (success) {
+                this.renderDashboard();
+            }
+        }
+    }
+
+    viewFullSubstitutionTable(teacherId, date) {
+        this.currentSubstitutionTeacherId = teacherId;
+        this.currentSubstitutionDate = date;
+        this.renderSubstitutionDayView();
+    }
+
+    changeMonth(offset) {
+        // Establecer el día a 1 antes de cambiar el mes para evitar problemas de desbordamiento
+        this.calendarDate.setDate(1);
+        this.calendarDate.setMonth(this.calendarDate.getMonth() + offset);
+        this.renderDashboard();
+    }
+
+    renderCalendarDays() {
+        const year = this.calendarDate.getFullYear();
+        const month = this.calendarDate.getMonth();
+
+        // Month names in Spanish
+        const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+        document.getElementById('calendar-title').textContent = `${monthNames[month]} ${year}`;
+
+        const firstDayOfMonth = new Date(year, month, 1).getDay(); // 0 = Sunday
+        // Adjust for Monday start (Monday=0, Sunday=6)
+        let startDay = firstDayOfMonth - 1;
+        if (startDay === -1) startDay = 6;
+
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const grid = document.getElementById('calendar-days');
+        let html = '';
+
+        // Empty cells for previous month
+        for (let i = 0; i < startDay; i++) {
+            html += `<div style="aspect-ratio: 1; border-radius: 12px;"></div>`;
+        }
+
+        const todayStr = new Date().toISOString().split('T')[0];
+
+        // Days
+        for (let day = 1; day <= daysInMonth; day++) {
+            const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const isToday = dateStr === todayStr;
+            const isSelected = dateStr === this.selectedDateStr;
+            
+            // Calcular día de la semana para este día
+            const currentDate = new Date(year, month, day);
+            const currentDayOfWeek = currentDate.getDay();
+            const isWeekend = currentDayOfWeek === 0 || currentDayOfWeek === 6;
+
+            // Check if there are substitutions for this day
+            const hasSubs = store.state.substitutions.some(s => s.date === dateStr);
+            
+            // Estilos base
+            let dayStyles = 'aspect-ratio: 1; border-radius: 12px; cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 1rem; font-weight: 600; position: relative; transition: all 0.2s ease;';
+            
+            // Colores según estado
+            if (isSelected) {
+                dayStyles += ' background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: white; box-shadow: 0 4px 12px rgba(79, 70, 229, 0.4); transform: scale(1.05);';
+            } else if (isToday) {
+                dayStyles += ' background: #dbeafe; color: #1e40af; border: 2px solid #3b82f6;';
+            } else if (isWeekend) {
+                dayStyles += ' background: #fef2f2; color: #991b1b;';
+            } else {
+                dayStyles += ' background: #f9fafb; color: #374151;';
+            }
+
+            // Indicador de sustituciones
+            const indicator = hasSubs ? 
+                `<div style="position: absolute; bottom: 6px; width: 6px; height: 6px; border-radius: 50%; background: ${isSelected ? '#ffffff' : '#10b981'}; box-shadow: 0 0 4px rgba(16, 185, 129, 0.6);"></div>` : '';
+
+            html += `
+                <div style="${dayStyles}" onclick="app.selectDay('${dateStr}')" onmouseover="if(!this.classList.contains('selected')){this.style.background='${isToday ? '#bfdbfe' : (isWeekend ? '#fee2e2' : '#e5e7eb')}'; this.style.transform='scale(1.05)';}" onmouseout="if(!this.classList.contains('selected')){this.style.background='${isToday ? '#dbeafe' : (isWeekend ? '#fef2f2' : '#f9fafb')}'; this.style.transform='scale(1)';}">
+                    ${day}
+                    ${indicator}
+                </div>
+            `;
+        }
+        grid.innerHTML = html;
+    }
+
+    selectDay(dateStr) {
+        this.selectedDateStr = dateStr;
+        this.renderDashboard();
+    }
+
+    clearSelection() {
+        this.selectedDateStr = null;
+        this.renderDashboard();
+    }
+
+    renderDayView() {
+        const date = this.selectedDateStr;
+        this.title.textContent = `Gestión del Día: ${date}`;
+
+        const subs = store.state.substitutions.filter(s => s.date === date);
+
+        this.container.innerHTML = `
+            <div style="margin-bottom: 1rem;">
+                <button class="btn" onclick="app.navigate('dashboard')">← Volver a Inicio</button>
+            </div>
+            
+            <div class="card">
+                <h3>Sustituciones para el ${date}</h3>
+                <div class="sub-list">
+                    <div class="sub-item sub-header">
+                        <div>Profesor Ausente</div>
+                        <div>Motivo</div>
+                        <div>Estado</div>
+                        <div>Acción</div>
+                    </div>
+                    ${subs.length ? subs.map(sub => this.createSubRow(sub)).join('') : '<div style="padding:1rem; text-align:center; color:var(--text-muted)">No hay sustituciones para este día.</div>'}
+                </div>
+            </div>
+        `;
+    }
+
+    renderSubstitutionDayView() {
+        const date = this.currentSubstitutionDate;
+        const teacherId = this.currentSubstitutionTeacherId;
+        
+        if (!date || !teacherId) {
+            this.navigate('dashboard');
+            return;
+        }
+        
+        const teacher = store.state.teachers.find(t => String(t.id) === String(teacherId));
+        if (!teacher) {
+            this.navigate('dashboard');
+            return;
+        }
+        
+        this.title.textContent = `Sustituciones: ${teacher.name} - ${date}`;
+        
+        const subs = store.state.substitutions.filter(s => 
+            s.date === date && String(s.teacherId) === String(teacherId)
+        );
+        
+        // Crear datos en formato compatible con renderMiniSubstitutionTable
+        const teacherData = {
+            teacher: teacher,
+            substitutions: subs
+        };
+
+        this.container.innerHTML = `
+            <div style="margin-bottom: 1rem;">
+                <button class="btn" onclick="app.navigate('dashboard')">← Volver al Dashboard</button>
+            </div>
+            
+            ${this.renderMiniSubstitutionTable(teacherData, date, true)}
+            
+            <div style="margin-top: 1rem;">
+                <button class="btn btn-primary" onclick="app.startNewSubForDay('${date}')">
+                    <i class="ph ph-plus"></i> Añadir Sustitución
+                </button>
+            </div>
+        `;
+    }
+    
+    deleteAllSubstitutionsForTeacher(teacherId, date) {
+        if (confirm('¿Está seguro de que desea eliminar TODAS las sustituciones de este profesor para esta fecha?')) {
+            const subsToDelete = store.state.substitutions.filter(s => 
+                s.date === date && String(s.teacherId) === String(teacherId)
+            );
+            
+            subsToDelete.forEach(sub => {
+                store.removeSubstitution(sub.id);
+            });
+            
+            this.navigate('dashboard');
+        }
+    }
+
+    renderNewForm() {
+        this.title.textContent = 'Nueva Sustitución';
+
+        const headerButton = document.querySelector('.user-profile');
+        if (headerButton) headerButton.style.display = 'block';
+
+        const today = new Date().toISOString().split('T')[0];
+        const selectedDate = this.currentSubstitutionDate || today;
+        const selectedTeacherId = this.currentSubstitutionTeacherId || '';
+
+        // Generate time options (09:00 to 14:00 in 30min intervals)
+        const timeOptions = [];
+        for (let hour = 9; hour <= 14; hour++) {
+            const hourStr = hour.toString().padStart(2, '0');
+            timeOptions.push(`${hourStr}:00`);
+            if (hour < 14) timeOptions.push(`${hourStr}:30`);
+        }
+
+        const timeSelectOptions = timeOptions.map(t => `<option value="${t}">${t}</option>`).join('');
+        const teacherOptions = store.state.teachers.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+
+        this.container.innerHTML = `
+            <div style="max-width: 600px; margin: 0 auto;">
+                <div style="margin-bottom: 1.5rem;">
+                    <button class="btn" onclick="app.navigate('dashboard')">← Volver a Inicio</button>
+                </div>
+
+                <div class="card" style="margin-bottom: 1.5rem;">
+                    <h2 style="margin-bottom: 1.5rem; color: #374151;">Registrar Nueva Sustitución</h2>
+                    
+                    <form id="new-sub-form" onsubmit="app.handleNewSubSubmit(event)">
+                        <input type="hidden" id="sub-id" value="${this.currentEditSubId || ''}">
+                        
+                        <!-- Fecha -->
+                        <div style="margin-bottom: 1.25rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Fecha *</label>
+                            <input type="date" id="sub-date" required value="${selectedDate}"
+                                   onchange="app.onNewSubDateChange()"
+                                   style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem;">
+                            <div id="day-of-week" style="margin-top: 0.25rem; font-size: 0.8rem; color: #6b7280; font-style: italic;"></div>
+                        </div>
+
+                        <!-- Hora Inicio y Fin -->
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+                            <div>
+                                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Hora Inicio *</label>
+                                <select id="start-time" required onchange="app.onTimeRangeChange()"
+                                        style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem;">
+                                    <option value="">Seleccionar...</option>
+                                    ${timeSelectOptions}
+                                </select>
+                            </div>
+                            <div>
+                                <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Hora Fin *</label>
+                                <select id="end-time" required onchange="app.onTimeRangeChange()"
+                                        style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem;">
+                                    <option value="">Seleccionar...</option>
+                                    ${timeSelectOptions}
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Profesor Ausente -->
+                        <div style="margin-bottom: 0.5rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Profesor Ausente *</label>
+                            <select id="absent-teacher" required onchange="app.onAbsentTeacherChange()"
+                                    style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem;">
+                                <option value="">Seleccionar profesor...</option>
+                                ${teacherOptions}
+                            </select>
+                        </div>
+                        <div id="absent-teacher-info" style="margin-bottom: 1.25rem; padding: 0.5rem; background: #f3f4f6; border-radius: 0.375rem; font-size: 0.8rem; color: #6b7280;">
+                            Selecciona un profesor para ver su información
+                        </div>
+
+                        <!-- Profesor Sustituto -->
+                        <div style="margin-bottom: 1.25rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Profesor Sustituto *</label>
+                            <select id="substitute-teacher" required
+                                    style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem;">
+                                <option value="">Seleccionar sustituto...</option>
+                            </select>
+                            <div id="substitute-warning" style="margin-top: 0.25rem; font-size: 0.8rem; color: #dc2626; display: none;"></div>
+                        </div>
+
+                        <!-- Curso y Grupo/Materia -->
+                        <div style="margin-bottom: 1.25rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Curso y Grupo / Materia *</label>
+                            <input type="text" id="course-subject" required placeholder="Ej: CA - INF3B"
+                                   style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem;">
+                        </div>
+
+                        <!-- Motivo -->
+                        <div style="margin-bottom: 1.5rem;">
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Motivo</label>
+                            <select id="reason"
+                                    style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem;">
+                                <option value="">Seleccionar motivo...</option>
+                                <option value="Enfermedad">Enfermedad</option>
+                                <option value="Asuntos Propios">Asuntos Propios</option>
+                                <option value="Consulta Médica">Consulta Médica</option>
+                                <option value="Excursión">Excursión</option>
+                                <option value="Otros">Otros</option>
+                            </select>
+                        </div>
+
+                        <!-- Botones -->
+                        <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                            <button type="button" class="btn" onclick="app.navigate('dashboard')" 
+                                    style="padding: 0.75rem 1.5rem; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db;">
+                                Cancelar
+                            </button>
+                            <button type="submit" class="btn btn-primary" style="padding: 0.75rem 1.5rem;">
+                                <i class="ph ph-check"></i> Guardar Sustitución
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+
+        // Set initial day of week
+        this.onNewSubDateChange();
+        
+        // Pre-fill teacher if coming from dashboard
+        if (selectedTeacherId) {
+            document.getElementById('absent-teacher').value = selectedTeacherId;
+            this.onAbsentTeacherChange();
+        }
+    }
+
+    onNewSubDateChange() {
+        const dateInput = document.getElementById('sub-date');
+        const dayOfWeekDiv = document.getElementById('day-of-week');
+        if (!dateInput || !dayOfWeekDiv) return;
+        
+        const date = new Date(dateInput.value);
+        if (isNaN(date.getTime())) {
+            dayOfWeekDiv.textContent = '';
+            return;
+        }
+        
+        const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        dayOfWeekDiv.textContent = days[date.getDay()];
+        
+        // Update available substitutes when date changes
+        this.updateSubstituteTeachers();
+    }
+
+    onTimeRangeChange() {
+        this.updateSubstituteTeachers();
+        this.updateCourseSubjectInfo();
+    }
+
+    onAbsentTeacherChange() {
+        const teacherId = document.getElementById('absent-teacher')?.value;
+        const infoDiv = document.getElementById('absent-teacher-info');
+        const dateInput = document.getElementById('sub-date')?.value;
+        const startTime = document.getElementById('start-time')?.value;
+        
+        if (!teacherId || !infoDiv) {
+            if (infoDiv) infoDiv.textContent = 'Selecciona un profesor para ver su información';
+            return;
+        }
+        
+        const teacher = store.state.teachers.find(t => String(t.id) === String(teacherId));
+        if (!teacher) {
+            infoDiv.innerHTML = `<strong>Desconocido</strong><br>Profesor no encontrado`;
+            return;
+        }
+        
+        // Buscar materias del profesor en las materias importadas
+        const dayOfWeek = dateInput ? this.getDayOfWeekFromDate(dateInput) : '';
+        
+        // Si hay hora seleccionada, filtrar solo la materia de ese tramo horario
+        let infoText = '';
+        if (startTime && dayOfWeek) {
+            const normalizedStartTime = startTime.split(':').slice(0, 2).join(':');
+            
+            // Buscar materia que coincida con el tramo horario seleccionado
+            const matchingSubject = store.state.subjects.find(s => {
+                const matchesTeacher = s.teacher && s.teacher.toLowerCase() === teacher.name.toLowerCase();
+                const matchesDay = this.normalizeDay(s.day) === dayOfWeek;
+                
+                let matchesTime = false;
+                if (s.time) {
+                    const subjectTimeParts = s.time.split(' - ');
+                    const subjectStart = subjectTimeParts[0].trim().split(':').slice(0, 2).join(':');
+                    matchesTime = subjectStart === normalizedStartTime;
+                }
+                
+                return matchesTeacher && matchesDay && matchesTime;
+            });
+            
+            if (matchingSubject) {
+                const courseGroup = matchingSubject.courseGroup || '';
+                const subject = matchingSubject.subject || '';
+                infoText = courseGroup && subject 
+                    ? `Materia: ${courseGroup} / ${subject}`
+                    : (courseGroup || subject || 'Sin detalles');
+            } else {
+                infoText = 'Sin materia asignada en este tramo';
+            }
+        } else {
+            // Si no hay hora seleccionada, mostrar todas las materias del día (comportamiento anterior)
+            const teacherSubjects = store.state.subjects.filter(s => 
+                s.teacher && s.teacher.toLowerCase() === teacher.name.toLowerCase() &&
+                (!dayOfWeek || this.normalizeDay(s.day) === dayOfWeek)
+            );
+            
+            if (teacherSubjects.length > 0) {
+                const uniqueSubjects = [...new Set(teacherSubjects.map(s => s.subject).filter(Boolean))];
+                const uniqueCourses = [...new Set(teacherSubjects.map(s => s.courseGroup).filter(Boolean))];
+                
+                if (uniqueSubjects.length > 0) {
+                    infoText += `Materias: ${uniqueSubjects.slice(0, 3).join(', ')}${uniqueSubjects.length > 3 ? '...' : ''}`;
+                }
+                if (uniqueCourses.length > 0) {
+                    if (infoText) infoText += '<br>';
+                    infoText += `Cursos: ${uniqueCourses.slice(0, 2).join(', ')}${uniqueCourses.length > 2 ? '...' : ''}`;
+                }
+            } else {
+                infoText = 'Sin materias asignadas para este día';
+            }
+        }
+        
+        infoDiv.innerHTML = `<strong>${teacher.name}</strong><br>${infoText || 'Sin información detallada'}`;
+        
+        this.updateSubstituteTeachers();
+        this.updateCourseSubjectInfo();
+    }
+
+    updateSubstituteTeachers() {
+        const substituteSelect = document.getElementById('substitute-teacher');
+        const absentTeacherId = document.getElementById('absent-teacher')?.value;
+        const dateInput = document.getElementById('sub-date')?.value;
+        const startTime = document.getElementById('start-time')?.value;
+        const endTime = document.getElementById('end-time')?.value;
+        
+        if (!substituteSelect) return;
+        
+        // Get teachers already assigned at this time
+        const assignedTeachers = this.getTeachersSubstitutingAtTime(dateInput, startTime, endTime);
+        
+        // Get teachers who are absent on this date (cannot substitute for others)
+        const absentTeachersForDate = this.getAbsentTeachersForDate(dateInput);
+        
+        let availableTeachers = [];
+        let usingSchedule = false;
+        
+        // Check if substitution schedule is imported and has data
+        if (store.state.substitutionSchedule && store.state.substitutionSchedule.length > 0 && dateInput && startTime && endTime) {
+            // Get day of week from date
+            const dayOfWeek = this.getDayOfWeekFromDate(dateInput);
+            
+            // Get available substitutes from the schedule for the selected day and time range
+            const scheduledSubstitutes = store.getAvailableSubstitutesForRange(dayOfWeek, startTime, endTime);
+            
+            if (scheduledSubstitutes && scheduledSubstitutes.length > 0) {
+                usingSchedule = true;
+                
+                // Map substitute names to teacher objects
+                availableTeachers = scheduledSubstitutes
+                    .map(subName => {
+                        // Try to find teacher by name (case insensitive)
+                        const teacher = store.state.teachers.find(t => 
+                            t.name.toLowerCase() === subName.toLowerCase()
+                        );
+                        return teacher;
+                    })
+                    .filter(t => t !== undefined) // Remove any not found
+                    .filter(t => {
+                        // Exclude current absent teacher
+                        if (String(t.id) === String(absentTeacherId)) return false;
+                        // Exclude already assigned teachers
+                        if (assignedTeachers.includes(String(t.id))) return false;
+                        // Exclude teachers who are absent on this date
+                        if (absentTeachersForDate.includes(String(t.id))) return false;
+                        return true;
+                    });
+            }
+        }
+        
+        // If no schedule data or no matches, fall back to showing all teachers
+        if (!usingSchedule || availableTeachers.length === 0) {
+            availableTeachers = store.state.teachers.filter(t => {
+                // Exclude current absent teacher
+                if (String(t.id) === String(absentTeacherId)) return false;
+                // Exclude already assigned teachers
+                if (assignedTeachers.includes(String(t.id))) return false;
+                // Exclude teachers who are absent on this date
+                if (absentTeachersForDate.includes(String(t.id))) return false;
+                return true;
+            });
+        }
+        
+        // Build options
+        let options = '<option value="">Seleccionar sustituto...</option>';
+        
+        if (availableTeachers.length === 0) {
+            options += '<option value="" disabled>No hay sustitutos disponibles para este horario</option>';
+        } else {
+            // Sort alphabetically by name
+            availableTeachers.sort((a, b) => a.name.localeCompare(b.name));
+            
+            availableTeachers.forEach(t => {
+                options += `<option value="${t.id}">${t.name}</option>`;
+            });
+        }
+        
+        substituteSelect.innerHTML = options;
+        
+        // Show warning if no substitutes
+        const warningDiv = document.getElementById('substitute-warning');
+        if (warningDiv) {
+            if (availableTeachers.length === 0 && startTime && endTime) {
+                warningDiv.textContent = 'No hay profesores disponibles en este horario';
+                warningDiv.style.display = 'block';
+            } else {
+                warningDiv.style.display = 'none';
+            }
+        }
+    }
+
+    // Función auxiliar para normalizar horas al formato HH:MM
+    normalizeTimeFormat(timeStr) {
+        if (!timeStr) return '';
+        const parts = timeStr.split(':').map(p => p.trim());
+        const hours = parts[0].padStart(2, '0');
+        const minutes = (parts[1] || '00').padStart(2, '0');
+        return `${hours}:${minutes}`;
+    }
+
+    updateCourseSubjectInfo() {
+        const courseSubjectInput = document.getElementById('course-subject');
+        const absentTeacherSelect = document.getElementById('absent-teacher');
+        const startTime = document.getElementById('start-time')?.value;
+        const dateInput = document.getElementById('sub-date')?.value;
+        
+        if (!courseSubjectInput || !absentTeacherSelect || !startTime || !dateInput) return;
+        
+        // Obtener el nombre del profesor directamente del select (texto visible)
+        const selectedOption = absentTeacherSelect.options[absentTeacherSelect.selectedIndex];
+        const teacherName = selectedOption ? selectedOption.text : '';
+        
+        if (!teacherName || teacherName === 'Seleccionar profesor...') return;
+        
+        console.log('=== BUSCANDO MATERIA ===');
+        console.log('Profesor:', teacherName);
+        console.log('Fecha:', dateInput);
+        console.log('Hora:', startTime);
+        console.log('Total materias en store:', store.state.subjects.length);
+        console.log('Materias disponibles:', store.state.subjects.map(s => `${s.teacher} - ${s.day} - ${s.time}`).slice(0, 5));
+        
+        // Buscar en las materias importadas
+        const dayOfWeek = this.getDayOfWeekFromDate(dateInput);
+        
+        // Normalizar la hora seleccionada al formato HH:MM (con cero inicial)
+        const normalizedStartTime = this.normalizeTimeFormat(startTime);
+        
+        // Buscar materia que coincida con profesor, día y hora
+        const matchingSubject = store.state.subjects.find(s => {
+            // Normalizar nombres para comparación (quitar acentos, minúsculas)
+            const subjectTeacher = (s.teacher || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const searchTeacher = teacherName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            
+            const matchesTeacher = subjectTeacher === searchTeacher || 
+                                  subjectTeacher.includes(searchTeacher) || 
+                                  searchTeacher.includes(subjectTeacher);
+            
+            const normalizedSubjectDay = this.normalizeDay(s.day).toLowerCase();
+            const normalizedSearchDay = dayOfWeek.toLowerCase();
+            const matchesDay = normalizedSubjectDay === normalizedSearchDay;
+            
+            // Verificar si el tiempo coincide
+            let matchesTime = false;
+            let subjectStart = '';
+            if (s.time) {
+                const subjectTimeParts = s.time.split(' - ');
+                subjectStart = this.normalizeTimeFormat(subjectTimeParts[0]);
+                matchesTime = subjectStart === normalizedStartTime;
+            }
+            
+            // Log detallado para debugging
+            if (!matchesTeacher || !matchesDay || !matchesTime) {
+                console.log(`  ❌ Profesor: "${subjectTeacher}" vs "${searchTeacher}" = ${matchesTeacher}`);
+                console.log(`  ❌ Día: "${normalizedSubjectDay}" vs "${normalizedSearchDay}" = ${matchesDay}`);
+                console.log(`  ❌ Hora: "${subjectStart}" vs "${normalizedStartTime}" = ${matchesTime}`);
+            }
+            
+            return matchesTeacher && matchesDay && matchesTime;
+        });
+        
+        if (matchingSubject) {
+            console.log('✓ Materia encontrada:', matchingSubject);
+            const courseGroup = matchingSubject.courseGroup || '';
+            const subject = matchingSubject.subject || '';
+            if (courseGroup && subject) {
+                courseSubjectInput.value = `${courseGroup} - ${subject}`;
+            } else if (courseGroup) {
+                courseSubjectInput.value = courseGroup;
+            } else if (subject) {
+                courseSubjectInput.value = subject;
+            }
+        } else {
+            console.log('✗ No se encontró materia para este tramo');
+            courseSubjectInput.value = '';
+            courseSubjectInput.placeholder = 'No hay materia asignada en este tramo';
+        }
+    }
+    
+    // Normaliza el nombre del día para comparaciones
+    normalizeDay(day) {
+        if (!day) return '';
+        const normalized = day.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        const dayMap = {
+            'lunes': 'Lunes',
+            'martes': 'Martes',
+            'miercoles': 'Miércoles',
+            'jueves': 'Jueves',
+            'viernes': 'Viernes'
+        };
+        return dayMap[normalized] || day;
+    }
+
+    getTeachersSubstitutingAtTime(date, startTime, endTime) {
+        if (!date || !startTime || !endTime) return [];
+        
+        const assigned = [];
+        const subs = store.state.substitutions.filter(s => s.date === date);
+        
+        subs.forEach(sub => {
+            if (sub.schedule && Array.isArray(sub.schedule)) {
+                sub.schedule.forEach(slot => {
+                    if (slot.substitute && slot.time) {
+                        const [slotStart] = slot.time.split(' - ');
+                        if (slotStart >= startTime && slotStart < endTime) {
+                            const subTeacher = store.state.teachers.find(t => t.name === slot.substitute);
+                            if (subTeacher) {
+                                assigned.push(String(subTeacher.id));
+                            }
+                        }
+                    }
+                });
+            }
+        });
+        
+        return assigned;
+    }
+    
+    getAbsentTeachersForDate(date) {
+        if (!date) return [];
+        
+        const absentTeacherIds = [];
+        const subs = store.state.substitutions.filter(s => s.date === date);
+        
+        subs.forEach(sub => {
+            if (sub.teacherId) {
+                absentTeacherIds.push(String(sub.teacherId));
+            }
+        });
+        
+        return [...new Set(absentTeacherIds)]; // Remove duplicates
+    }
+
+    handleNewSubSubmit(e) {
+        e.preventDefault();
+        
+        const subId = document.getElementById('sub-id')?.value;
+        const date = document.getElementById('sub-date').value;
+        const startTime = document.getElementById('start-time').value;
+        const endTime = document.getElementById('end-time').value;
+        const absentTeacherId = document.getElementById('absent-teacher').value;
+        const substituteTeacherId = document.getElementById('substitute-teacher').value;
+        const courseSubject = document.getElementById('course-subject').value;
+        const reason = document.getElementById('reason').value;
+        
+        // Validations
+        if (!date || !startTime || !endTime || !absentTeacherId || !substituteTeacherId || !courseSubject) {
+            alert('Por favor, complete todos los campos obligatorios');
+            return;
+        }
+        
+        // Validate substitute is not the absent teacher
+        if (String(substituteTeacherId) === String(absentTeacherId)) {
+            alert('El profesor sustituto no puede ser el mismo que el profesor ausente');
+            return;
+        }
+        
+        // Validate substitute is not already assigned at this time
+        const assignedTeachers = this.getTeachersSubstitutingAtTime(date, startTime, endTime);
+        if (assignedTeachers.includes(String(substituteTeacherId))) {
+            const subTeacher = store.state.teachers.find(t => String(t.id) === String(substituteTeacherId));
+            alert(`${subTeacher?.name || 'Este profesor'} ya está asignado a otra sustitución en este horario`);
+            return;
+        }
+        
+        // Validate substitute is not marked as absent on this date
+        const absentTeachersForDate = this.getAbsentTeachersForDate(date);
+        if (absentTeachersForDate.includes(String(substituteTeacherId))) {
+            const subTeacher = store.state.teachers.find(t => String(t.id) === String(substituteTeacherId));
+            alert(`${subTeacher?.name || 'Este profesor'} está marcado como ausente en esta fecha y no puede sustituir a otros`);
+            return;
+        }
+        
+        const absentTeacher = store.state.teachers.find(t => String(t.id) === String(absentTeacherId));
+        const substituteTeacher = store.state.teachers.find(t => String(t.id) === String(substituteTeacherId));
+        
+        const substitution = {
+            teacherId: absentTeacher.id,
+            teacherName: absentTeacher.name,
+            date: date,
+            reason: reason,
+            schedule: [{
+                time: `${startTime} - ${endTime}`,
+                substitute: substituteTeacher.name,
+                courseGroup: courseSubject.split(' - ')[0] || courseSubject,
+                subject: courseSubject.split(' - ')[1] || ''
+            }]
+        };
+        
+        if (subId) {
+            // Update existing
+            const idx = store.state.substitutions.findIndex(s => s.id === subId);
+            if (idx !== -1) {
+                store.state.substitutions[idx] = { ...store.state.substitutions[idx], ...substitution };
+                store.save();
+            }
+        } else {
+            // Create new
+            store.addSubstitution(substitution);
+        }
+        
+        // Clear state
+        this.currentEditSubId = null;
+        this.currentSubstitutionTeacherId = null;
+        this.currentSubstitutionDate = null;
+        
+        this.navigate('dashboard');
+    }
+
+    renderNewFormWithPreFilledData(subId) {
+        const sub = store.state.substitutions.find(s => s.id === subId);
+        if (!sub) return;
+        
+        this.currentEditSubId = subId;
+        this.currentSubstitutionDate = sub.date;
+        this.currentSubstitutionTeacherId = sub.teacherId;
+        
+        this.renderNewForm();
+        
+        // Pre-fill form after render
+        setTimeout(() => {
+            if (sub.schedule && sub.schedule[0]) {
+                const slot = sub.schedule[0];
+                const [start, end] = slot.time.split(' - ');
+                
+                document.getElementById('start-time').value = start;
+                document.getElementById('end-time').value = end;
+                document.getElementById('course-subject').value = slot.courseGroup && slot.subject 
+                    ? `${slot.courseGroup} - ${slot.subject}` 
+                    : (slot.courseGroup || '');
+                
+                // Find and set substitute teacher
+                if (slot.substitute) {
+                    const subTeacher = store.state.teachers.find(t => t.name === slot.substitute);
+                    if (subTeacher) {
+                        document.getElementById('substitute-teacher').value = subTeacher.id;
+                    }
+                }
+            }
+            
+            document.getElementById('reason').value = sub.reason || '';
+        }, 100);
+    }
+
+    startNewSubForDay(date) {
+        this.currentSubstitutionDate = date;
+        this.currentSubstitutionTeacherId = null;
+        this.currentEditSubId = null;
+        this.navigate('new');
+    }
+
+    generatePrintTableHTML(teacherData, date) {
+        const teacher = teacherData.teacher;
+        const teacherSubs = teacherData.substitutions;
+        const substitutionsCount = teacherSubs.length;
+        
+        const timeSlots = [
+            { start: '09:00', end: '09:30' },
+            { start: '09:30', end: '10:00' },
+            { start: '10:00', end: '10:30' },
+            { start: '10:30', end: '11:00' },
+            { start: '11:00', end: '11:30' },
+            { start: '11:30', end: '12:00' },
+            { start: '12:00', end: '12:30', isBreak: true },
+            { start: '12:30', end: '13:00' },
+            { start: '13:00', end: '13:30' },
+            { start: '13:30', end: '14:00' }
+        ];
+
+        const tableRows = timeSlots.map(slot => {
+            const timeRange = `${slot.start} - ${slot.end}`;
+            
+            const existingSub = teacherSubs.find(sub => 
+                sub.schedule && sub.schedule.some(s => s.time === timeRange)
+            );
+            
+            const scheduleItem = existingSub ? existingSub.schedule.find(s => s.time === timeRange) : null;
+            const substituteName = scheduleItem?.substitute;
+
+            if (slot.isBreak) {
+                return `
+                    <tr class="print-row-break">
+                        <td class="print-cell-time">${slot.start}-${slot.end}</td>
+                        <td class="print-cell-break">RECREO</td>
+                        <td class="print-cell-dash">-</td>
+                    </tr>
+                `;
+            }
+
+            const hasSub = !!substituteName;
+
+            const substituteCell = hasSub 
+                ? `<span class="print-substitute-name">${substituteName}</span>`
+                : '<span class="print-dash">-</span>';
+            
+            const courseSubject = scheduleItem?.courseGroup && scheduleItem?.subject
+                ? `<span class="print-badge">${scheduleItem.courseGroup}/${scheduleItem.subject}</span>`
+                : '<span class="print-dash">-</span>';
+
+            return `
+                <tr class="print-row ${hasSub ? 'print-row-with-sub' : ''}">
+                    <td class="print-cell-time">${slot.start}</td>
+                    <td class="print-cell-substitute">${substituteCell}</td>
+                    <td class="print-cell-course">${courseSubject}</td>
+                </tr>
+            `;
+        }).join('');
+
+        return `
+            <div class="print-mini-table">
+                <div class="print-table-header">
+                    <div class="print-header-content">
+                        <i class="ph ph-user print-header-icon"></i>
+                        <div class="print-header-text">
+                            <h4 class="print-teacher-name">${teacher.name}</h4>
+                            <p class="print-sub-count">${substitutionsCount} sustitución${substitutionsCount !== 1 ? 'es' : ''}</p>
+                        </div>
+                    </div>
+                </div>
+                <table class="print-table">
+                    <thead>
+                        <tr class="print-header-row">
+                            <th class="print-th">Hora</th>
+                            <th class="print-th">Sust.</th>
+                            <th class="print-th">Curso/Mat.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tableRows}
+                    </tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    renderPrintView() {
+        this.title.textContent = 'Impresión';
+
+        const headerButton = document.querySelector('.user-profile');
+        if (headerButton) headerButton.style.display = 'none';
+
+        const displayDate = this.selectedDateStr || new Date().toISOString().split('T')[0];
+        const dayOfWeek = this.getDayOfWeekFromDate(displayDate);
+        
+        const subsToShow = store.state.substitutions.filter(s => s.date === displayDate);
+        const teachersWithSubs = this.groupSubstitutionsByTeacher(subsToShow, displayDate);
+
+        const timeSlots = [
+            { start: '09:00', end: '09:30' },
+            { start: '09:30', end: '10:00' },
+            { start: '10:00', end: '10:30' },
+            { start: '10:30', end: '11:00' },
+            { start: '11:00', end: '11:30' },
+            { start: '11:30', end: '12:00' },
+            { start: '12:00', end: '12:30', isBreak: true },
+            { start: '12:30', end: '13:00' },
+            { start: '13:00', end: '13:30' },
+            { start: '13:30', end: '14:00' }
+        ];
+
+        const cardsHTML = teachersWithSubs.map(teacherData => {
+            const teacher = teacherData.teacher;
+            const teacherSubs = teacherData.substitutions;
+            const subCount = teacherSubs.length;
+            
+            const tableRows = timeSlots.map(slot => {
+                const timeRange = `${slot.start} - ${slot.end}`;
+                
+                const existingSub = teacherSubs.find(sub => 
+                    sub.schedule && sub.schedule.some(s => s.time === timeRange)
+                );
+                
+                const scheduleItem = existingSub ? existingSub.schedule.find(s => s.time === timeRange) : null;
+                const substituteName = scheduleItem?.substitute;
+                
+                if (slot.isBreak) {
+                    return `
+                        <tr class="print-row-break">
+                            <td class="print-cell-time">${slot.start}-${slot.end}</td>
+                            <td class="print-cell-break" colspan="2">RECREO</td>
+                        </tr>
+                    `;
+                }
+                
+                if (substituteName) {
+                    const courseGroup = scheduleItem?.courseGroup || '';
+                    const subject = scheduleItem?.subject || '';
+                    const badgeText = courseGroup && subject ? `${courseGroup}/${subject}` : (courseGroup || subject || '-');
+                    
+                    return `
+                        <tr class="print-row-with-sub">
+                            <td class="print-cell-time">${slot.start}</td>
+                            <td class="print-cell-substitute">
+                                <span class="print-substitute-name">${substituteName}</span>
+                            </td>
+                            <td class="print-cell-course">
+                                <span class="print-badge">${badgeText}</span>
+                            </td>
+                        </tr>
+                    `;
+                }
+                
+                return `
+                    <tr class="print-row-empty">
+                        <td class="print-cell-time">${slot.start}</td>
+                        <td class="print-cell-dash">-</td>
+                        <td class="print-cell-dash">-</td>
+                    </tr>
+                `;
+            }).join('');
+            
+            return `
+                <div class="print-card">
+                    <div class="print-card-header">
+                        <i class="ph ph-user"></i>
+                        <div>
+                            <h4>${teacher.name}</h4>
+                            <span>${subCount} sustitución${subCount !== 1 ? 'es' : ''}</span>
+                        </div>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Hora</th>
+                                <th>Sust.</th>
+                                <th>Curso/Mat.</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }).join('');
+
+        this.container.innerHTML = `
+            <div class="print-container">
+                <div class="print-header-controls">
+                    <h3>Sustituciones para imprimir</h3>
+                    <div class="print-controls-group">
+                        <input type="date" id="print-date" value="${displayDate}" 
+                               onchange="app.updatePrintDate(this.value)"
+                               class="print-date-input">
+                        <button class="btn btn-primary print-btn" onclick="app.printSubstitutions()">
+                            <i class="ph ph-printer"></i>
+                            Imprimir
+                        </button>
+                    </div>
+                </div>
+
+                <div id="print-content">
+                    <div class="print-page-title">
+                        <h2>CONTROL DE SUSTITUCIONES</h2>
+                        <p>${dayOfWeek}, ${displayDate}</p>
+                    </div>
+
+                    ${teachersWithSubs.length === 0 ? 
+                        `<div class="print-empty">
+                            <i class="ph ph-calendar-x"></i>
+                            <p>No hay sustituciones programadas para este día</p>
+                        </div>` :
+                        `<div class="print-grid">
+                            ${cardsHTML}
+                        </div>`
+                    }
+
+                    <div class="print-footer">
+                        <p>Documento generado el ${new Date().toLocaleDateString('es-ES')} a las ${new Date().toLocaleTimeString('es-ES', {hour: '2-digit', minute:'2-digit'})}</p>
+                    </div>
+                </div>
+            </div>
+
+            <style>
+                .print-container {
+                    max-width: 100%;
+                    margin: 0 auto;
+                    padding: 0.5rem;
+                    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                }
+                .print-header-controls {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 1rem;
+                    padding: 0.5rem;
+                    background: #f9fafb;
+                    border-radius: 6px;
+                }
+                .print-header-controls h3 {
+                    margin: 0;
+                    font-size: 0.9rem;
+                    font-weight: 600;
+                }
+                .print-controls-group {
+                    display: flex;
+                    gap: 0.5rem;
+                    align-items: center;
+                }
+                .print-date-input {
+                    padding: 0.35rem 0.5rem;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 4px;
+                    font-size: 0.8rem;
+                }
+                .print-btn {
+                    display: flex;
+                    align-items: center;
+                    gap: 0.35rem;
+                    padding: 0.4rem 0.8rem;
+                    font-size: 0.8rem;
+                }
+                .print-page-title {
+                    text-align: center;
+                    margin-bottom: 0.75rem;
+                    padding-bottom: 0.5rem;
+                    border-bottom: 1px solid #4f46e5;
+                }
+                .print-page-title h2 {
+                    margin: 0;
+                    color: #4f46e5;
+                    font-size: 1rem;
+                    font-weight: 700;
+                }
+                .print-page-title p {
+                    margin: 0.2rem 0 0 0;
+                    font-size: 0.8rem;
+                    color: #374151;
+                }
+                .print-grid {
+                    display: grid;
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 8px;
+                }
+                .print-card {
+                    border: 1px solid #e5e7eb;
+                    border-radius: 6px;
+                    overflow: hidden;
+                    background: white;
+                    break-inside: avoid;
+                    page-break-inside: avoid;
+                }
+                .print-card-header {
+                    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+                    color: white;
+                    padding: 4px 6px;
+                    display: flex;
+                    align-items: center;
+                    gap: 4px;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+                .print-card-header i {
+                    font-size: 0.7rem;
+                }
+                .print-card-header div {
+                    flex: 1;
+                    min-width: 0;
+                }
+                .print-card-header h4 {
+                    margin: 0;
+                    font-size: 0.75rem;
+                    font-weight: 600;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+                .print-card-header span {
+                    font-size: 0.6rem;
+                    opacity: 0.9;
+                }
+                .print-card table {
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 8px;
+                }
+                .print-card thead {
+                    background: #f9fafb;
+                }
+                .print-card th {
+                    padding: 2px 4px;
+                    font-size: 0.65rem;
+                    font-weight: 600;
+                    color: #374151;
+                    text-align: left;
+                    border-bottom: 1px solid #e5e7eb;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+                .print-card td {
+                    padding: 2px 4px;
+                    border-bottom: 1px solid #f3f4f6;
+                }
+                .print-card tr:last-child td {
+                    border-bottom: none;
+                }
+                .print-row-with-sub {
+                    background: #f0fdf4;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+                .print-row-break {
+                    background: #ffedd5;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+                .print-cell-time {
+                    font-size: 0.7rem;
+                    font-weight: 500;
+                    color: #374151;
+                    width: 45px;
+                }
+                .print-cell-break {
+                    color: #9a3412;
+                    font-style: italic;
+                    font-weight: 500;
+                    font-size: 0.7rem;
+                }
+                .print-cell-dash {
+                    color: #9ca3af;
+                    font-size: 0.7rem;
+                }
+                .print-cell-substitute {
+                    font-size: 0.7rem;
+                }
+                .print-cell-course {
+                    font-size: 0.65rem;
+                }
+                .print-substitute-name {
+                    color: #166534;
+                    font-weight: 500;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    display: block;
+                    max-width: 100%;
+                }
+                .print-badge {
+                    background: #ede9fe;
+                    color: #5b21b6;
+                    padding: 1px 3px;
+                    border-radius: 3px;
+                    font-size: 0.65rem;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    display: inline-block;
+                    max-width: 100%;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+                .print-empty {
+                    text-align: center;
+                    padding: 2rem;
+                    color: #6b7280;
+                }
+                .print-empty i {
+                    font-size: 2rem;
+                    margin-bottom: 0.5rem;
+                }
+                .print-empty p {
+                    font-size: 0.85rem;
+                    margin: 0;
+                }
+                .print-footer {
+                    margin-top: 1rem;
+                    padding-top: 0.5rem;
+                    border-top: 1px solid #e5e7eb;
+                    font-size: 0.7rem;
+                    color: #6b7280;
+                    text-align: center;
+                }
+                @media print {
+                    @page {
+                        size: A4 portrait;
+                        margin: 5mm;
+                    }
+                    body {
+                        margin: 0;
+                        padding: 0;
+                    }
+                    .print-container {
+                        padding: 0;
+                    }
+                    .print-header-controls {
+                        display: none !important;
+                    }
+                    .print-page-title {
+                        margin-bottom: 0.5rem;
+                    }
+                    .print-page-title h2 {
+                        font-size: 0.9rem;
+                    }
+                    .print-page-title p {
+                        font-size: 0.7rem;
+                    }
+                    .print-grid {
+                        gap: 6px;
+                    }
+                    .print-card {
+                        break-inside: avoid;
+                        page-break-inside: avoid;
+                    }
+                    .print-card-header,
+                    .print-row-with-sub,
+                    .print-row-break,
+                    .print-badge,
+                    .print-card th {
+                        -webkit-print-color-adjust: exact !important;
+                        print-color-adjust: exact !important;
+                    }
+                    .print-footer {
+                        margin-top: 0.5rem;
+                        font-size: 0.65rem;
+                    }
+                }
+            </style>
+        `;
+    }
+
+    updatePrintDate(date) {
+        this.selectedDateStr = date;
+        this.renderPrintView();
+    }
+
+    printSubstitutions() {
+        const printContent = document.getElementById('print-content');
+        if (!printContent) {
+            console.error('No se encontró el contenido para imprimir');
+            return;
+        }
+
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) {
+            alert('Por favor, permita las ventanas emergentes para imprimir');
+            return;
+        }
+
+        const displayDate = this.selectedDateStr || new Date().toISOString().split('T')[0];
+
+        printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Sustituciones - ${displayDate}</title>
+                <style>
+                    @page { size: A4 portrait; margin: 5mm; }
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                        font-size: 8px;
+                        line-height: 1.2;
+                        color: #333;
+                        padding: 10px;
+                    }
+                    .print-page-title {
+                        text-align: center;
+                        margin-bottom: 10px;
+                        padding-bottom: 8px;
+                        border-bottom: 2px solid #4f46e5;
+                    }
+                    .print-page-title h2 {
+                        color: #4f46e5;
+                        font-size: 14px;
+                        font-weight: 700;
+                        margin: 0;
+                    }
+                    .print-page-title p {
+                        font-size: 11px;
+                        color: #666;
+                        margin: 4px 0 0 0;
+                    }
+                    .print-grid {
+                        display: grid;
+                        grid-template-columns: 1fr 1fr;
+                        gap: 8px;
+                    }
+                    .print-card {
+                        border: 1px solid #ddd;
+                        border-radius: 6px;
+                        overflow: hidden;
+                        background: white;
+                        break-inside: avoid;
+                        page-break-inside: avoid;
+                    }
+                    .print-card-header {
+                        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+                        color: white;
+                        padding: 4px 6px;
+                        display: flex;
+                        align-items: center;
+                        gap: 4px;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    .print-card-header h4 {
+                        font-size: 9px;
+                        font-weight: 600;
+                        margin: 0;
+                    }
+                    .print-card-header span {
+                        font-size: 7px;
+                        opacity: 0.9;
+                    }
+                    .print-card table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        font-size: 8px;
+                    }
+                    .print-card th {
+                        background: #f5f5f5;
+                        padding: 2px 4px;
+                        font-size: 7px;
+                        font-weight: 600;
+                        text-align: left;
+                        border-bottom: 1px solid #ddd;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    .print-card td {
+                        padding: 2px 4px;
+                        border-bottom: 1px solid #eee;
+                    }
+                    .print-row-with-sub {
+                        background: #f0fdf4;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    .print-row-break {
+                        background: #ffedd5;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    .print-cell-time {
+                        width: 45px;
+                        font-weight: 500;
+                    }
+                    .print-cell-break {
+                        color: #92400e;
+                        font-style: italic;
+                        font-weight: 500;
+                    }
+                    .print-substitute-name {
+                        color: #166534;
+                        font-weight: 500;
+                    }
+                    .print-badge {
+                        background: #ede9fe;
+                        color: #5b21b6;
+                        padding: 1px 3px;
+                        border-radius: 3px;
+                        font-size: 7px;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                    .print-footer {
+                        margin-top: 10px;
+                        padding-top: 8px;
+                        border-top: 1px solid #ddd;
+                        font-size: 8px;
+                        color: #666;
+                        text-align: center;
+                    }
+                    .print-empty {
+                        text-align: center;
+                        padding: 20px;
+                        color: #666;
+                        grid-column: 1 / -1;
+                    }
+                </style>
+            </head>
+            <body>
+                ${printContent.innerHTML}
+            </body>
+            </html>
+        `);
+        
+        printWindow.document.close();
+        printWindow.focus();
+        
+        setTimeout(() => {
+            printWindow.print();
+        }, 250);
+    }
+
+    renderStats() {
+        this.title.textContent = 'Estadísticas';
+
+        const headerButton = document.querySelector('.user-profile');
+        if (headerButton) headerButton.style.display = 'block';
+
+        const stats = this.calculateStats();
+
+        this.container.innerHTML = `
+            <div style="max-width: 1200px; margin: 0 auto;">
+                <!-- Tarjetas de resumen -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; margin-bottom: 2rem;">
+                    <div class="card" style="text-align: center; padding: 1.5rem;">
+                        <i class="ph ph-users" style="font-size: 2.5rem; color: #4f46e5; margin-bottom: 0.5rem;"></i>
+                        <div style="font-size: 2rem; font-weight: 700; color: #1f2937;">${stats.totalSubstitutions}</div>
+                        <div style="color: #6b7280; font-size: 0.9rem;">Total Sustituciones</div>
+                    </div>
+                    <div class="card" style="text-align: center; padding: 1.5rem;">
+                        <i class="ph ph-calendar" style="font-size: 2.5rem; color: #10b981; margin-bottom: 0.5rem;"></i>
+                        <div style="font-size: 2rem; font-weight: 700; color: #1f2937;">${stats.thisMonth}</div>
+                        <div style="color: #6b7280; font-size: 0.9rem;">Este Mes</div>
+                    </div>
+                    <div class="card" style="text-align: center; padding: 1.5rem;">
+                        <i class="ph ph-user" style="font-size: 2.5rem; color: #f59e0b; margin-bottom: 0.5rem;"></i>
+                        <div style="font-size: 2rem; font-weight: 700; color: #1f2937;">${stats.uniqueTeachers}</div>
+                        <div style="color: #6b7280; font-size: 0.9rem;">Profesores con Sustituciones</div>
+                    </div>
+                </div>
+
+                <!-- Gráficos de estadísticas -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 1.5rem;">
+                    <!-- Sustituciones por Profesor -->
+                    <div class="card">
+                        <h3 style="margin-bottom: 1rem; color: #374151;">
+                            <i class="ph ph-chart-bar" style="margin-right: 0.5rem;"></i>
+                            Top Profesores Ausentes
+                        </h3>
+                        <div style="max-height: 300px; overflow-y: auto;">
+                            ${stats.byTeacher.slice(0, 10).map((item, index) => `
+                                <div style="display: flex; align-items: center; padding: 0.75rem; border-bottom: 1px solid #e5e7eb; ${index === 0 ? 'background: #fef3c7;' : ''}">
+                                    <div style="width: 30px; font-weight: 700; color: ${index < 3 ? '#4f46e5' : '#6b7280'};">${index + 1}</div>
+                                    <div style="flex: 1; font-weight: 500;">${item.name}</div>
+                                    <div style="background: #4f46e5; color: white; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.875rem; font-weight: 600;">${item.count}</div>
+                                </div>
+                            `).join('') || '<div style="padding: 1rem; text-align: center; color: #6b7280;">Sin datos</div>'}
+                        </div>
+                    </div>
+
+                    <!-- Sustituciones por Motivo -->
+                    <div class="card">
+                        <h3 style="margin-bottom: 1rem; color: #374151;">
+                            <i class="ph ph-chart-pie" style="margin-right: 0.5rem;"></i>
+                            Sustituciones por Motivo
+                        </h3>
+                        <div style="max-height: 300px; overflow-y: auto;">
+                            ${stats.byReason.map((item, index) => `
+                                <div style="display: flex; align-items: center; padding: 0.75rem; border-bottom: 1px solid #e5e7eb;">
+                                    <div style="flex: 1; font-weight: 500;">${item.name}</div>
+                                    <div style="background: #10b981; color: white; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.875rem; font-weight: 600;">${item.count}</div>
+                                </div>
+                            `).join('') || '<div style="padding: 1rem; text-align: center; color: #6b7280;">Sin datos</div>'}
+                        </div>
+                    </div>
+
+                    <!-- Sustituciones por Mes -->
+                    <div class="card" style="grid-column: 1 / -1;">
+                        <h3 style="margin-bottom: 1rem; color: #374151;">
+                            <i class="ph ph-calendar-blank" style="margin-right: 0.5rem;"></i>
+                            Sustituciones por Mes
+                        </h3>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem;">
+                            ${stats.byMonth.map((item) => `
+                                <div style="text-align: center; padding: 1rem; background: #f9fafb; border-radius: 8px;">
+                                    <div style="font-weight: 600; color: #374151; margin-bottom: 0.5rem;">${item.name}</div>
+                                    <div style="font-size: 1.5rem; font-weight: 700; color: #4f46e5;">${item.count}</div>
+                                </div>
+                            `).join('') || '<div style="padding: 1rem; text-align: center; color: #6b7280;">Sin datos</div>'}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    calculateStats() {
+        const subs = store.state.substitutions;
+        
+        // Total de sustituciones
+        const totalSubstitutions = subs.length;
+        
+        // Sustituciones este mes
+        const today = new Date();
+        const thisMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+        const thisMonth = subs.filter(s => s.date && s.date.startsWith(thisMonthStr)).length;
+        
+        // Profesores únicos con sustituciones
+        const uniqueTeachers = new Set(subs.map(s => s.teacherId)).size;
+        
+        // Por profesor
+        const byTeacherMap = {};
+        subs.forEach(s => {
+            const name = s.teacherName || 'Desconocido';
+            byTeacherMap[name] = (byTeacherMap[name] || 0) + 1;
+        });
+        const byTeacher = Object.entries(byTeacherMap)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count);
+        
+        // Por motivo
+        const byReasonMap = {};
+        subs.forEach(s => {
+            const reason = s.reason || 'Sin motivo';
+            byReasonMap[reason] = (byReasonMap[reason] || 0) + 1;
+        });
+        const byReason = Object.entries(byReasonMap)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => b.count - a.count);
+        
+        // Por mes
+        const monthNames = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+        const byMonthMap = {};
+        subs.forEach(s => {
+            if (s.date) {
+                const date = new Date(s.date);
+                const monthKey = `${monthNames[date.getMonth()]} ${date.getFullYear()}`;
+                byMonthMap[monthKey] = (byMonthMap[monthKey] || 0) + 1;
+            }
+        });
+        const byMonth = Object.entries(byMonthMap)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => {
+                // Ordenar por fecha (mes más reciente primero)
+                const [monthA, yearA] = a.name.split(' ');
+                const [monthB, yearB] = b.name.split(' ');
+                const dateA = new Date(yearA, monthNames.indexOf(monthA));
+                const dateB = new Date(yearB, monthNames.indexOf(monthB));
+                return dateB - dateA;
+            });
+        
+        return {
+            totalSubstitutions,
+            thisMonth,
+            uniqueTeachers,
+            byTeacher,
+            byReason,
+            byMonth
+        };
+    }
+
+    renderSettings() {
+        this.title.textContent = 'Gestión de Profesores';
+
+        const headerButton = document.querySelector('.user-profile');
+        if (headerButton) headerButton.style.display = 'none';
+
+        this.container.innerHTML = `
+            <div style="max-width: 1200px; margin: 0 auto;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+                    <h2 style="margin: 0; color: #4f46e5;">Gestión de Profesores</h2>
+                </div>
+
+                <div style="display: flex; gap: 1rem; margin-bottom: 2rem; border-bottom: 2px solid #e5e7eb;">
+                    <button class="settings-tab active" data-tab="teachers" onclick="app.switchSettingsTab('teachers')" 
+                            style="padding: 0.75rem 1.5rem; background: none; border: none; cursor: pointer; font-weight: 600; color: #4f46e5; border-bottom: 2px solid #4f46e5;">
+                        <i class="ph ph-users" style="margin-right: 0.5rem;"></i>Profesores
+                    </button>
+                    <button class="settings-tab" data-tab="schedule" onclick="app.switchSettingsTab('schedule')"
+                            style="padding: 0.75rem 1.5rem; background: none; border: none; cursor: pointer; font-weight: 500; color: #6b7280;">
+                        <i class="ph ph-calendar" style="margin-right: 0.5rem;"></i>Cuadro de Sustituciones
+                    </button>
+                </div>
+
+                <div id="teachers-tab" class="settings-tab-content" style="display: block;">
+                    <div class="card" style="margin-bottom: 2rem;">
+                        <h3 style="margin-bottom: 1.5rem; color: #374151;">Importación y Gestión de Datos</h3>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+                            <!-- Importar Profesores -->
+                            <div>
+                                <input type="file" id="teacher-file" accept=".csv,.xlsx,.xls" style="display: none;" onchange="app.handleFileUpload(event)">
+                                <button class="btn btn-primary" onclick="document.getElementById('teacher-file').click()" style="width: 100%;">
+                                    <i class="ph ph-file-arrow-up"></i> Importar Profesores
+                                </button>
+                            </div>
+                            
+                            <!-- Importar Materias -->
+                            <div>
+                                <input type="file" id="subject-file" accept=".csv,.xlsx,.xls,.pdf" style="display: none;" onchange="app.handleSubjectFileUpload(event)">
+                                <button class="btn btn-primary" onclick="document.getElementById('subject-file').click()" style="width: 100%;">
+                                    <i class="ph ph-book-open"></i> Importar Materias
+                                </button>
+                            </div>
+                            
+                            <!-- Importar Cuadro Sustituciones -->
+                            <div>
+                                <input type="file" id="schedule-file" accept=".csv,.xlsx,.xls,.pdf" style="display: none;" onchange="app.handleScheduleFileUpload(event)">
+                                <button class="btn btn-primary" style="background: #7c3aed; border-color: #7c3aed; width: 100%;" onclick="document.getElementById('schedule-file').click()">
+                                    <i class="ph ph-calendar-check"></i> Importar Cuadro Sustituciones
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+                            <!-- Ver Materias -->
+                            <button class="btn" style="background: #f0f9ff; border: 1px solid #0ea5e9; color: #0369a1; width: 100%;" onclick="app.showAllSubjects()">
+                                <i class="ph ph-list"></i> Ver Materias
+                            </button>
+                            
+                            <!-- Ver Cuadro -->
+                            <button class="btn" style="background: #f3e8ff; border: 1px solid #a855f7; color: #7c3aed; width: 100%;" onclick="app.showSubstitutionSchedule()">
+                                <i class="ph ph-calendar-blank"></i> Ver Cuadro
+                            </button>
+                            
+                            <!-- Borrar Materias -->
+                            <button class="btn" style="background: #fff1f2; border: 1px solid #fb7185; color: #9f1239; width: 100%;" onclick="app.clearSubjects()">
+                                <i class="ph ph-trash"></i> Borrar Materias
+                            </button>
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+                        <div class="card import-hint">
+                            <div class="import-hint-title">Formato de horario por profesor</div>
+                            <div class="import-hint-text">Cada fila representa un tramo de clase. Columnas recomendadas:</div>
+                            <div class="import-hint-example">Profesor, Día, Tramo, Materia, Curso/Grupo</div>
+                        </div>
+                        <div class="card import-hint" style="border-left: 4px solid #7c3aed;">
+                            <div class="import-hint-title" style="color: #7c3aed;">Formato Cuadro de Sustituciones</div>
+                            <div class="import-hint-text">Define qué profesores están disponibles por franja horaria. Columnas:</div>
+                            <div class="import-hint-example">Profesor, Día, Hora Inicio, Hora Fin, Opciones</div>
+                        </div>
+                    </div>
+
+                    <div class="card" style="margin-bottom: 2rem;">
+                        <h3 style="margin-bottom: 1.5rem; color: #374151;">Agregar Nuevo Profesor</h3>
+                        <form onsubmit="app.handleAddTeacher(event)">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 1rem; align-items: end;">
+                                <div>
+                                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Nombre</label>
+                                    <input type="text" name="teacherName" required 
+                                           style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem;">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Email</label>
+                                    <input type="email" name="teacherEmail" 
+                                           style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem;">
+                                </div>
+                                <div>
+                                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Teléfono</label>
+                                    <input type="tel" name="teacherPhone" 
+                                           style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem;">
+                                </div>
+                                <button type="submit" class="btn btn-primary" style="padding: 0.75rem 1.5rem;">
+                                    <i class="ph ph-plus"></i> Agregar
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="card">
+                        <h3 style="margin-bottom: 1.5rem; color: #374151;">Lista de Profesores (${store.state.teachers.length})</h3>
+                        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem;">
+                            ${store.state.teachers.map(teacher => `
+                                <div style="background: white; border-radius: 12px; border: 1px solid #e5e7eb; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); transition: all 0.2s; display: flex; flex-direction: column; gap: 0.75rem;" onmouseover="this.style.boxShadow='0 4px 12px rgba(0, 0, 0, 0.15)'" onmouseout="this.style.boxShadow='0 1px 3px rgba(0, 0, 0, 0.1)'">
+                                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                        <i class="ph ph-user-circle" style="font-size: 2.5rem; color: #6b7280;"></i>
+                                        <div style="flex: 1; min-width: 0;">
+                                            <div style="font-size: 1.1rem; font-weight: 700; color: #1f2937; line-height: 1.2;">${teacher.name}</div>
+                                            ${teacher.department ? `<span style="display: inline-block; margin-top: 0.25rem; padding: 0.2rem 0.6rem; background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%); color: white; font-size: 0.7rem; font-weight: 600; border-radius: 9999px;">${teacher.department}</span>` : ''}
+                                        </div>
+                                    </div>
+                                    
+                                    <div style="font-size: 0.85rem; color: #6b7280; display: flex; align-items: center; gap: 0.4rem;">
+                                        <i class="ph ph-envelope" style="font-size: 1rem;"></i>
+                                        <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${teacher.email || 'Sin email'}</span>
+                                    </div>
+                                    
+                                    <div style="display: flex; gap: 0.5rem; margin-top: 0.5rem; padding-top: 0.75rem; border-top: 1px solid #f3f4f6;">
+                                        <button onclick="app.editTeacher(${teacher.id})" style="flex: 1; padding: 0.5rem; background: #f3f4f6; border: none; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 500; color: #374151; display: flex; align-items: center; justify-content: center; gap: 0.4rem; transition: all 0.2s;" onmouseover="this.style.background='#e5e7eb'" onmouseout="this.style.background='#f3f4f6'">
+                                            <i class="ph ph-pencil-simple"></i> Editar
+                                        </button>
+                                        <button onclick="app.deleteTeacher(${teacher.id})" style="padding: 0.5rem 0.75rem; background: #fef2f2; border: none; border-radius: 6px; cursor: pointer; color: #dc2626; display: flex; align-items: center; justify-content: center; transition: all 0.2s;" onmouseover="this.style.background='#fee2e2'" onmouseout="this.style.background='#fef2f2'">
+                                            <i class="ph ph-trash" style="font-size: 1rem;"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                        ${store.state.teachers.length === 0 ? '<div style="text-align: center; padding: 2rem; color: #9ca3af;">No hay profesores registrados. Agrega profesores manualmente o importa desde Excel.</div>' : ''}
+                    </div>
+                </div>
+
+                <div id="schedule-tab" class="settings-tab-content" style="display: none;">
+                    <div class="card" style="margin-bottom: 2rem;">
+                        <h3 style="margin-bottom: 1.5rem; color: #374151;">Importar Cuadro de Sustituciones</h3>
+                        <div style="background: #f3f4f6; padding: 1rem; border-radius: 0.375rem; margin-bottom: 1rem;">
+                            <p style="margin: 0; font-size: 0.875rem; color: #4b5563;">
+                                <i class="ph ph-info" style="margin-right: 0.5rem;"></i>
+                                Copie y pegue el cuadro de sustituciones desde Excel. El sistema detectará automáticamente los profesores y sus horarios.
+                            </p>
+                        </div>
+                        <textarea id="schedule-input" rows="10" 
+                                  style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-family: monospace; font-size: 0.875rem; margin-bottom: 1rem;"
+                                  placeholder="Ejemplo:
+PROFESOR | LUNES | MARTES | MIERCOLES
+Juan Pérez | 09:00-10:00 | 11:00-12:00 | -
+María García | - | 09:00-11:00 | 10:00-12:00"></textarea>
+                        <div style="display: flex; gap: 1rem;">
+                            <button onclick="app.importSubstitutionSchedule()" class="btn btn-primary">
+                                <i class="ph ph-upload"></i> Importar
+                            </button>
+                            <button onclick="app.clearSubstitutionSchedule()" class="btn btn-danger">
+                                <i class="ph ph-trash"></i> Limpiar Todo
+                            </button>
+                        </div>
+                    </div>
+
+                    ${store.state.substitutionSchedule.length > 0 ? `
+                        <div class="card">
+                            <h3 style="margin-bottom: 1.5rem; color: #374151;">Cuadro de Sustituciones Actual</h3>
+                            <div class="sub-list">
+                                <div class="sub-item sub-header">
+                                    <div>Profesor</div>
+                                    <div>Día</div>
+                                    <div>Horario</div>
+                                </div>
+                                ${store.state.substitutionSchedule.map(entry => `
+                                    <div class="sub-item">
+                                        <div style="font-weight: 500;">${entry.teacher}</div>
+                                        <div style="color: var(--text-muted);">${entry.day}</div>
+                                        <div style="color: var(--text-muted);">${entry.startTime} - ${entry.endTime}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    switchSettingsTab(tabName) {
+        document.querySelectorAll('.settings-tab').forEach(tab => {
+            tab.classList.remove('active');
+            tab.style.color = '#6b7280';
+            tab.style.borderBottom = 'none';
+        });
+        const activeTab = document.querySelector(`[data-tab="${tabName}"]`);
+        if (activeTab) {
+            activeTab.classList.add('active');
+            activeTab.style.color = '#4f46e5';
+            activeTab.style.borderBottom = '2px solid #4f46e5';
+        }
+
+        document.querySelectorAll('.settings-tab-content').forEach(content => {
+            content.style.display = 'none';
+        });
+        const activeContent = document.getElementById(`${tabName}-tab`);
+        if (activeContent) {
+            activeContent.style.display = 'block';
+        }
+    }
+
+    handleAddTeacher(e) {
+        e.preventDefault();
+        const formData = new FormData(e.target);
+        const teacher = {
+            name: formData.get('teacherName'),
+            email: formData.get('teacherEmail'),
+            phone: formData.get('teacherPhone')
+        };
+        store.addTeacher(teacher);
+        this.renderSettings();
+    }
+
+    deleteTeacher(id) {
+        if (confirm('¿Está seguro de que desea eliminar este profesor?\n\nEsta acción no se puede deshacer.')) {
+            store.removeTeacher(id);
+            this.renderSettings();
+        }
+    }
+
+    editTeacher(id) {
+        const teacher = store.state.teachers.find(t => t.id === id);
+        if (!teacher) return;
+        
+        const newName = prompt('Nombre del profesor:', teacher.name);
+        if (newName === null) return; // Cancelado
+        if (!newName.trim()) {
+            alert('El nombre no puede estar vacío');
+            return;
+        }
+        
+        const newEmail = prompt('Email:', teacher.email || '');
+        if (newEmail === null) return;
+        
+        const newPhone = prompt('Teléfono:', teacher.phone || '');
+        if (newPhone === null) return;
+        
+        const newDept = prompt('Departamento/Especialidad:', teacher.department || '');
+        if (newDept === null) return;
+        
+        // Actualizar el profesor
+        teacher.name = newName.trim();
+        teacher.email = newEmail.trim();
+        teacher.phone = newPhone.trim();
+        if (newDept.trim()) {
+            teacher.department = newDept.trim();
+        } else {
+            delete teacher.department;
+        }
+        
+        store.save();
+        this.renderSettings();
+    }
+
+    importSubstitutionSchedule() {
+        const input = document.getElementById('schedule-input');
+        if (!input || !input.value.trim()) {
+            alert('Por favor, ingrese el cuadro de sustituciones');
+            return;
+        }
+
+        const lines = input.value.trim().split('\n');
+        const schedule = [];
+
+        lines.forEach((line, index) => {
+            if (index === 0) return;
+            if (!line.trim()) return;
+
+            const parts = line.split(/\t|\|/);
+            if (parts.length < 2) return;
+
+            const teacher = parts[0].trim();
+            const days = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
+
+            parts.slice(1).forEach((timeSlot, dayIndex) => {
+                if (!timeSlot.trim() || timeSlot.trim() === '-') return;
+
+                const times = timeSlot.trim().split('-');
+                if (times.length === 2) {
+                    schedule.push({
+                        teacher: teacher,
+                        day: days[dayIndex] || 'Otro',
+                        startTime: times[0].trim(),
+                        endTime: times[1].trim()
+                    });
+                }
+            });
+        });
+
+        if (schedule.length === 0) {
+            alert('No se pudo parsear el cuadro de sustituciones. Por favor, verifique el formato.');
+            return;
+        }
+
+        store.setSubstitutionSchedule(schedule);
+        alert(`Cuadro de sustituciones importado correctamente. ${schedule.length} entradas añadidas.`);
+        this.renderSettings();
+    }
+
+    clearSubstitutionSchedule() {
+        if (confirm('¿Está seguro de que desea borrar todo el cuadro de sustituciones?')) {
+            store.clearSubstitutionSchedule();
+            this.renderSettings();
+        }
+    }
+
+    // Importar profesores desde archivo CSV/Excel
+    async handleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        try {
+            const extension = file.name.split('.').pop().toLowerCase();
+            let teachers = [];
+            
+            if (extension === 'csv') {
+                const text = await file.text();
+                teachers = this.parseTeachersCSV(text);
+            } else if (extension === 'xlsx' || extension === 'xls') {
+                const data = await file.arrayBuffer();
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+                teachers = this.parseTeachersFromArray(jsonData);
+            } else {
+                alert('Formato no soportado. Use CSV, XLSX o XLS.');
+                event.target.value = '';
+                return;
+            }
+            
+            if (teachers.length > 0) {
+                let addedCount = 0;
+                teachers.forEach(t => {
+                    store.addTeacher(t);
+                    addedCount++;
+                });
+                
+                // Mostrar resumen de la importación
+                const withDept = teachers.filter(t => t.department).length;
+                const withEmail = teachers.filter(t => t.email).length;
+                let message = `${addedCount} profesores importados correctamente.`;
+                if (withDept > 0) message += `\n• ${withDept} con departamento/especialidad`;
+                if (withEmail > 0) message += `\n• ${withEmail} con email`;
+                
+                alert(message);
+                this.renderSettings();
+            } else {
+                alert('No se encontraron profesores en el archivo. Verifique que el archivo tenga una columna con los nombres.');
+            }
+        } catch (error) {
+            console.error('Error al importar profesores:', error);
+            alert('Error al importar el archivo: ' + error.message);
+        }
+        
+        // Reset input
+        event.target.value = '';
+    }
+    
+    parseTeachersCSV(text) {
+        const lines = text.split(/\r?\n/).filter(line => line.trim());
+        const teachers = [];
+        let emailIndex = 1, phoneIndex = 2, deptIndex = -1;
+        
+        lines.forEach((line, index) => {
+            const parts = line.split(/[,;]/).map(p => p.trim());
+            
+            // Detectar encabezados en la primera línea
+            if (index === 0 && line.toLowerCase().includes('nombre')) {
+                parts.forEach((header, idx) => {
+                    const h = header.toLowerCase();
+                    if (h.includes('email') || h.includes('correo') || h.includes('mail')) emailIndex = idx;
+                    if (h.includes('telefono') || h.includes('phone') || h.includes('tel') || h.includes('móvil') || h.includes('movil')) phoneIndex = idx;
+                    if (h.includes('departamento') || h.includes('department') || h.includes('especialidad') || h.includes('area')) deptIndex = idx;
+                });
+                return; // Skip header
+            }
+            
+            if (parts.length >= 1 && parts[0]) {
+                const teacher = {
+                    name: parts[0],
+                    email: parts[emailIndex] || '',
+                    phone: parts[phoneIndex] || ''
+                };
+                if (deptIndex >= 0 && parts[deptIndex]) {
+                    teacher.department = parts[deptIndex];
+                }
+                teachers.push(teacher);
+            }
+        });
+        
+        return teachers;
+    }
+    
+    parseTeachersFromArray(data) {
+        const teachers = [];
+        if (!data || data.length === 0) return teachers;
+        
+        // Detectar si hay encabezados y qué columnas contienen
+        const headers = data[0] || [];
+        const hasHeaders = headers[0] && headers[0].toLowerCase().includes('nombre');
+        const startIndex = hasHeaders ? 1 : 0;
+        
+        // Detectar índices de columnas por nombre
+        let emailIndex = 1, phoneIndex = 2, deptIndex = -1;
+        if (hasHeaders) {
+            headers.forEach((header, idx) => {
+                const h = header.toLowerCase();
+                if (h.includes('email') || h.includes('correo') || h.includes('mail')) emailIndex = idx;
+                if (h.includes('telefono') || h.includes('phone') || h.includes('tel') || h.includes('móvil') || h.includes('movil')) phoneIndex = idx;
+                if (h.includes('departamento') || h.includes('department') || h.includes('especialidad') || h.includes('area')) deptIndex = idx;
+            });
+        }
+        
+        for (let i = startIndex; i < data.length; i++) {
+            const row = data[i];
+            if (row && row[0]) {
+                const teacher = {
+                    name: row[0],
+                    email: row[emailIndex] || '',
+                    phone: row[phoneIndex] || ''
+                };
+                if (deptIndex >= 0 && row[deptIndex]) {
+                    teacher.department = row[deptIndex];
+                }
+                teachers.push(teacher);
+            }
+        }
+        
+        return teachers;
+    }
+    
+    // Importar materias desde PDF - Versión robusta
+    async parseSubjectPDF(file) {
+        const subjects = [];
+        const debugInfo = [];
+        
+        try {
+            console.log('=== INICIANDO PARSEO DE PDF ===');
+            console.log('Archivo:', file.name);
+            
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            
+            console.log(`PDF tiene ${pdf.numPages} páginas`);
+            
+            // Extraer todo el texto de todas las páginas
+            let allLines = [];
+            
+            for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                const page = await pdf.getPage(pageNum);
+                const textContent = await page.getTextContent();
+                
+                // Extraer texto con posiciones para mejor análisis
+                const items = textContent.items.map(item => ({
+                    text: item.str,
+                    x: item.transform[4],
+                    y: item.transform[5]
+                }));
+                
+                // Ordenar por posición Y (de arriba a abajo) y luego X (izquierda a derecha)
+                items.sort((a, b) => {
+                    if (Math.abs(a.y - b.y) < 5) return a.x - b.x;
+                    return b.y - a.y;
+                });
+                
+                // Agrupar en líneas basándose en posición Y
+                let currentLine = [];
+                let currentY = null;
+                
+                items.forEach(item => {
+                    if (currentY === null || Math.abs(item.y - currentY) < 5) {
+                        currentLine.push(item.text);
+                    } else {
+                        if (currentLine.length > 0) {
+                            allLines.push(currentLine.join(' ').trim());
+                        }
+                        currentLine = [item.text];
+                    }
+                    currentY = item.y;
+                });
+                
+                if (currentLine.length > 0) {
+                    allLines.push(currentLine.join(' ').trim());
+                }
+            }
+            
+            // Limpiar líneas vacías y mostrar todo el texto para debug
+            allLines = allLines.filter(line => line.trim().length > 0);
+            
+            console.log('\n=== TEXTO COMPLETO EXTRAÍDO ===');
+            console.log(`Total de líneas: ${allLines.length}`);
+            allLines.forEach((line, idx) => {
+                console.log(`[${idx}] ${line}`);
+            });
+            console.log('=== FIN DEL TEXTO ===\n');
+            
+            // Patrones de búsqueda
+            const dayPattern = /\b(Lunes|Martes|Miércoles|Miercoles|Jueves|Viernes)\b/gi;
+            const timePattern = /(\d{1,2}:\d{2})\s*(?:-\s*(\d{1,2}:\d{2}))?/g;
+            const subjectCodes = /\b(LCL|MAT|EAR|ING|FOL|TUT|INF|NAT|SOC|EDF|REL|ETI|PLA|TEC|MUS|VIS|BIO|QUI|FIS|HIS|GEO|LEN|VAL)\b/gi;
+            const subjectNames = /\b(Matemáticas|Lengua|Inglés|Francés|Alemán|Biología|Física|Química|Historia|Geografía|Filosofía|Educación Física|Religión|Ética|Tutoría|Informática|Plástica|Música|Tecnología|Naturales|Sociales|Valenciano|Castellano)\b/gi;
+            const coursePattern = /(\d+[º°]?\s*(?:ESO|Bachillerato|BACH)?\s*[A-D]?)\b/gi;
+            
+            // Buscar días primero
+            const dayIndices = [];
+            allLines.forEach((line, idx) => {
+                const dayMatch = line.match(/\b(Lunes|Martes|Miércoles|Miercoles|Jueves|Viernes)\b/i);
+                if (dayMatch) {
+                    dayIndices.push({
+                        index: idx,
+                        line: line,
+                        day: this.normalizeDay(dayMatch[0]),
+                        text: line
+                    });
+                }
+            });
+            
+            console.log(`Días encontrados: ${dayIndices.length}`);
+            dayIndices.forEach(d => console.log(`  - ${d.day} en línea ${d.index}: ${d.line}`));
+            
+            // Para cada día encontrado, buscar horarios y datos cercanos
+            dayIndices.forEach(dayInfo => {
+                const searchRange = 5; // Buscar 5 líneas antes y después
+                const startIdx = Math.max(0, dayInfo.index - searchRange);
+                const endIdx = Math.min(allLines.length, dayInfo.index + searchRange);
+                
+                const nearbyLines = allLines.slice(startIdx, endIdx);
+                const nearbyText = nearbyLines.join(' ');
+                
+                console.log(`\nAnalizando área alrededor de ${dayInfo.day} (líneas ${startIdx}-${endIdx}):`);
+                console.log(`Texto combinado: ${nearbyText.substring(0, 200)}...`);
+                
+                // Buscar horarios en el área cercana
+                const timeMatches = [];
+                let timeMatch;
+                const timeRegex = /(\d{1,2}:\d{2})\s*(?:-\s*(\d{1,2}:\d{2}))?/g;
+                while ((timeMatch = timeRegex.exec(nearbyText)) !== null) {
+                    timeMatches.push({
+                        start: timeMatch[1],
+                        end: timeMatch[2] || '',
+                        full: timeMatch[2] ? `${timeMatch[1]} - ${timeMatch[2]}` : timeMatch[1]
+                    });
+                }
+                
+                console.log(`  Horarios encontrados: ${timeMatches.length}`);
+                timeMatches.forEach(t => console.log(`    - ${t.full}`));
+                
+                // Buscar asignaturas
+                const subjectsFound = [];
+                let subjMatch;
+                const subjRegex = /\b(LCL|MAT|EAR|ING|FOL|TUT|INF|NAT|SOC|EDF|REL|ETI|PLA|TEC|MUS|VIS|BIO|QUI|FIS|HIS|GEO|LEN|VAL|Matemáticas|Lengua|Inglés|Francés|Biología|Física|Química|Historia|Geografía|Educación Física|Religión|Ética|Tutoría|Informática|Plástica|Música|Tecnología|Naturales|Sociales|Valenciano|Castellano)\b/gi;
+                while ((subjMatch = subjRegex.exec(nearbyText)) !== null) {
+                    subjectsFound.push(subjMatch[0]);
+                }
+                
+                console.log(`  Asignaturas encontradas: ${subjectsFound.join(', ')}`);
+                
+                // Buscar cursos/grupos
+                const coursesFound = [];
+                let courseMatch;
+                const courseRegex = /(\d+[º°]?\s*(?:ESO|Bachillerato|BACH)?\s*[A-D]?)\b/gi;
+                while ((courseMatch = courseRegex.exec(nearbyText)) !== null) {
+                    if (courseMatch[0].match(/\d/)) {
+                        coursesFound.push(courseMatch[0]);
+                    }
+                }
+                
+                console.log(`  Cursos encontrados: ${coursesFound.join(', ')}`);
+                
+                // Buscar profesores (patrones de nombre)
+                const teachersFound = [];
+                // Patrón: Apellido Apellido, Nombre o Apellido Apellido Nombre
+                const teacherRegex = /([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:,\s*[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)?)/g;
+                nearbyLines.forEach(line => {
+                    if (line.match(teacherRegex) && !line.match(/\d{1,2}:\d{2}/)) {
+                        // Filtrar líneas que parecen ser nombres de profesores
+                        const words = line.trim().split(/\s+/);
+                        if (words.length >= 2 && words.length <= 4) {
+                            // Verificar que no sea una asignatura ni curso
+                            if (!line.match(/\b(Lunes|Martes|Miércoles|Jueves|Viernes|ESO|Bachillerato|BACH)\b/i) &&
+                                !line.match(/^\d+[º°]/)) {
+                                teachersFound.push(line.trim());
+                            }
+                        }
+                    }
+                });
+                
+                console.log(`  Profesores encontrados: ${teachersFound.join(', ')}`);
+                
+                // Crear registros para cada combinación encontrada
+                if (timeMatches.length > 0) {
+                    timeMatches.forEach((time, timeIdx) => {
+                        const subject = subjectsFound[timeIdx] || subjectsFound[0] || '';
+                        const course = coursesFound[timeIdx] || coursesFound[0] || '';
+                        const teacher = teachersFound[timeIdx] || teachersFound[0] || 'Sin profesor';
+                        
+                        const subjectData = {
+                            teacher: teacher,
+                            day: dayInfo.day,
+                            time: time.full,
+                            subject: subject.toUpperCase(),
+                            courseGroup: course,
+                            _debug: {
+                                sourceLines: nearbyLines,
+                                dayLine: dayInfo.line,
+                                dayIndex: dayInfo.index
+                            }
+                        };
+                        
+                        subjects.push(subjectData);
+                        
+                        console.log(`  → Registro creado: ${dayInfo.day} ${time.full} - ${subject} - ${teacher} - ${course}`);
+                    });
+                }
+                
+                // Si no hay horarios pero hay otros datos, crear registro parcial
+                if (timeMatches.length === 0 && (subjectsFound.length > 0 || teachersFound.length > 0 || coursesFound.length > 0)) {
+                    const subjectData = {
+                        teacher: teachersFound[0] || 'Sin profesor',
+                        day: dayInfo.day,
+                        time: '',
+                        subject: (subjectsFound[0] || '').toUpperCase(),
+                        courseGroup: coursesFound[0] || '',
+                        _debug: {
+                            sourceLines: nearbyLines,
+                            dayLine: dayInfo.line,
+                            partial: true
+                        }
+                    };
+                    
+                    subjects.push(subjectData);
+                    console.log(`  → Registro parcial creado (sin horario): ${dayInfo.day} - ${subjectData.subject} - ${subjectData.teacher}`);
+                }
+            });
+            
+            // Si no se encontraron días, intentar buscar por horarios
+            if (dayIndices.length === 0) {
+                console.log('\n=== NO SE ENCONTRARON DÍAS, BUSCANDO POR HORARIOS ===');
+                
+                allLines.forEach((line, idx) => {
+                    const timeMatch = line.match(/(\d{1,2}:\d{2})\s*(?:-\s*(\d{1,2}:\d{2}))?/);
+                    if (timeMatch) {
+                        const searchRange = 3;
+                        const startIdx = Math.max(0, idx - searchRange);
+                        const endIdx = Math.min(allLines.length, idx + searchRange);
+                        const nearbyLines = allLines.slice(startIdx, endIdx);
+                        const nearbyText = nearbyLines.join(' ');
+                        
+                        // Intentar inferir día del contexto
+                        const inferredDay = nearbyText.match(/\b(Lunes|Martes|Miércoles|Miercoles|Jueves|Viernes)\b/i);
+                        const day = inferredDay ? this.normalizeDay(inferredDay[0]) : '';
+                        
+                        // Buscar asignatura
+                        const subjMatch = nearbyText.match(/\b(LCL|MAT|EAR|ING|FOL|TUT|INF|NAT|SOC|EDF|REL|ETI|PLA|TEC|MUS|VIS|BIO|QUI|FIS|HIS|GEO|LEN|VAL)\b/i);
+                        const subject = subjMatch ? subjMatch[0].toUpperCase() : '';
+                        
+                        // Buscar profesor
+                        let teacher = 'Sin profesor';
+                        nearbyLines.forEach(nearLine => {
+                            if (nearLine.match(/[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+/)) {
+                                const words = nearLine.trim().split(/\s+/);
+                                if (words.length >= 2 && words.length <= 4) {
+                                    teacher = nearLine.trim();
+                                }
+                            }
+                        });
+                        
+                        // Buscar curso
+                        const courseMatch = nearbyText.match(/(\d+[º°]?\s*(?:ESO|BACH)?\s*[A-D]?)/i);
+                        const course = courseMatch ? courseMatch[0] : '';
+                        
+                        const timeStr = timeMatch[2] ? `${timeMatch[1]} - ${timeMatch[2]}` : timeMatch[1];
+                        
+                        subjects.push({
+                            teacher: teacher,
+                            day: day,
+                            time: timeStr,
+                            subject: subject,
+                            courseGroup: course,
+                            _debug: {
+                                sourceLines: nearbyLines,
+                                timeLine: line,
+                                inferredDay: !inferredDay
+                            }
+                        });
+                        
+                        console.log(`→ Registro desde horario: ${day || 'Día no detectado'} ${timeStr} - ${subject} - ${teacher} - ${course}`);
+                    }
+                });
+            }
+            
+            console.log('\n=== RESUMEN DEL PARSEO ===');
+            console.log(`Total de materias extraídas: ${subjects.length}`);
+            
+            if (subjects.length === 0) {
+                console.warn('\n⚠️  NO SE ENCONTRARON MATERIAS');
+                console.warn('Esto puede deberse a:');
+                console.warn('1. El PDF es una imagen escaneada (sin texto seleccionable)');
+                console.warn('2. El formato del PDF no es el esperado');
+                console.warn('3. Los días de la semana están en un formato diferente');
+                console.warn('\nRevisa el texto extraído arriba para ver qué contiene el PDF.');
+            } else {
+                console.log('\nMaterias encontradas:');
+                subjects.forEach((s, i) => {
+                    console.log(`  ${i + 1}. ${s.day} ${s.time} | ${s.subject} | ${s.teacher} | ${s.courseGroup}`);
+                });
+            }
+            
+            console.log('=== FIN DEL PARSEO ===\n');
+            
+            return subjects;
+        } catch (error) {
+            console.error('Error al parsear PDF:', error);
+            throw new Error('No se pudo leer el PDF. Asegúrese de que sea un PDF con texto seleccionable.');
+        }
+    }
+    
+    // Importar materias desde archivo (detecta automáticamente formato de cuadro de sustituciones)
+    async handleSubjectFileUpload(event) {
+        console.log('=== INICIO handleSubjectFileUpload ===');
+        const file = event.target.files[0];
+        if (!file) {
+            console.log('No se detectó ningún archivo');
+            return;
+        }
+
+        console.log('Archivo detectado:', file.name);
+        console.log('Tamaño del archivo:', file.size, 'bytes');
+        console.log('Tipo MIME:', file.type);
+
+        try {
+            const extension = file.name.split('.').pop().toLowerCase();
+            console.log('Extensión detectada:', extension);
+            let entries = [];
+            let isScheduleFormat = false;
+
+            if (extension === 'csv') {
+                console.log('Procesando archivo CSV...');
+                const text = await file.text();
+                console.log('Texto CSV leído, longitud:', text.length, 'caracteres');
+                console.log('Primeras 200 caracteres:', text.substring(0, 200));
+                // Detectar formato basándose en los encabezados
+                isScheduleFormat = this.isScheduleFormatCSV(text);
+                console.log('¿Es formato de cuadro de sustituciones?:', isScheduleFormat);
+                if (isScheduleFormat) {
+                    console.log('Usando parseScheduleCSV...');
+                    entries = this.parseScheduleCSV(text);
+                } else {
+                    console.log('Usando parseSubjectsCSV...');
+                    entries = this.parseSubjectsCSV(text);
+                }
+                console.log('Entradas parseadas:', entries.length);
+            } else if (extension === 'xlsx' || extension === 'xls') {
+                console.log('Procesando archivo Excel...');
+                const data = await file.arrayBuffer();
+                const workbook = XLSX.read(data);
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+                // Detectar formato basándose en los encabezados
+                isScheduleFormat = this.isScheduleFormatArray(jsonData);
+                if (isScheduleFormat) {
+                    entries = this.parseScheduleFromArray(jsonData);
+                } else {
+                    entries = this.parseSubjectsFromArray(jsonData);
+                }
+            } else if (extension === 'pdf') {
+                entries = await this.parseSubjectPDF(file);
+            }
+
+            if (entries.length > 0) {
+                console.log('Importación exitosa:', entries.length, 'entradas');
+                if (isScheduleFormat) {
+                    store.addSubstitutionSchedule(entries);
+                    alert(`${entries.length} entradas del cuadro de sustituciones importadas correctamente.`);
+                } else {
+                    entries.forEach(s => store.addSubject(s));
+                    alert(`${entries.length} materias importadas correctamente.`);
+                }
+                this.renderSettings();
+            } else {
+                console.warn('No se encontraron datos válidos en el archivo');
+                alert('No se encontraron datos en el archivo.');
+            }
+            console.log('=== FIN handleSubjectFileUpload ===');
+        } catch (error) {
+            console.error('=== ERROR en handleSubjectFileUpload ===');
+            console.error('Mensaje de error:', error.message);
+            console.error('Stack trace:', error.stack);
+            console.error('Error completo:', error);
+            alert('Error al importar el archivo. Verifique el formato.\n\nDetalle: ' + error.message);
+        }
+
+        event.target.value = '';
+    }
+
+    // Detectar si el CSV es formato de cuadro de sustituciones
+    isScheduleFormatCSV(text) {
+        const lines = text.split(/\r?\n/).filter(line => line.trim());
+        if (lines.length === 0) return false;
+
+        const header = lines[0].toLowerCase();
+        // Buscar indicadores de formato de cuadro: "hora inicio", "hora fin", "opciones"
+        return header.includes('hora inicio') || header.includes('hora fin') || header.includes('opciones') ||
+               header.includes('start') || header.includes('end');
+    }
+
+    // Detectar si el array es formato de cuadro de sustituciones
+    isScheduleFormatArray(data) {
+        if (!data || data.length === 0) return false;
+
+        const headerRow = data[0];
+        if (!headerRow || headerRow.length === 0) return false;
+
+        const header = headerRow.join(' ').toLowerCase();
+        // Buscar indicadores de formato de cuadro
+        return header.includes('hora inicio') || header.includes('hora fin') || header.includes('opciones') ||
+               header.includes('start') || header.includes('end');
+    }
+    
+    parseSubjectsCSV(text) {
+        console.log('=== INICIO parseSubjectsCSV ===');
+        console.log('Texto recibido, longitud:', text.length);
+        const lines = text.split(/\r?\n/).filter(line => line.trim());
+        console.log('Líneas encontradas:', lines.length);
+        console.log('Primeras 5 líneas:', lines.slice(0, 5));
+        
+        const subjects = [];
+
+        lines.forEach((line, index) => {
+            if (index === 0 && line.toLowerCase().includes('profesor')) {
+                console.log('Línea', index, 'detectada como header, saltando...');
+                return; // Skip header
+            }
+
+            // Usar SOLO punto y coma como separador (el formato usa ; y nombres pueden tener comas)
+            const parts = line.split(';').map(p => p.trim());
+            
+            console.log(`Línea ${index}: "${line}" -> Partes:`, parts);
+            
+            // Verificar que tenemos exactamente 6 columnas
+            if (parts.length === 6 && parts[0]) {
+                // Formato: Profesor, Día, Hora Inicio, Hora Fin, Asignatura, Curso/Grupo
+                const subjectObj = {
+                    teacher: parts[0],  // Nombre completo (ya incluye coma si la tiene)
+                    day: parts[1],
+                    time: parts[2] + ' - ' + parts[3],  // Combinar Hora Inicio - Hora Fin
+                    subject: parts[4],
+                    courseGroup: parts[5]
+                };
+                console.log(`Línea ${index} -> Materia creada:`, subjectObj);
+                subjects.push(subjectObj);
+            } else if (parts.length === 5 && parts[0]) {
+                // Formato alternativo de 5 columnas: Profesor, Día, Tramo, Materia, Curso
+                const subjectObj = {
+                    teacher: parts[0],
+                    day: parts[1],
+                    time: parts[2],
+                    subject: parts[3] || '',
+                    courseGroup: parts[4] || ''
+                };
+                console.log(`Línea ${index} -> Materia creada:`, subjectObj);
+                subjects.push(subjectObj);
+            } else {
+                console.warn(`Línea ${index} ignorada - formato no reconocido (${parts.length} columnas, se esperaban 5 o 6)`);
+            }
+        });
+
+        console.log('Total materias creadas:', subjects.length);
+        console.log('=== FIN parseSubjectsCSV ===');
+        return subjects;
+    }
+    
+    parseSubjectsFromArray(data) {
+        const subjects = [];
+        const startIndex = data[0] && data[0][0] && data[0][0].toLowerCase().includes('profesor') ? 1 : 0;
+
+        for (let i = startIndex; i < data.length; i++) {
+            const row = data[i];
+            if (row && row.length >= 3 && row[0]) {
+                // Formato tradicional de materias: Profesor, Día, Tramo/Hora, Materia, Curso/Grupo
+                subjects.push({
+                    teacher: row[0],
+                    day: row[1],
+                    time: row[2],
+                    subject: row[3] || '',
+                    courseGroup: row[4] || ''
+                });
+            }
+        }
+
+        return subjects;
+    }
+    
+    // Importar cuadro de sustituciones desde archivo
+    async handleScheduleFileUpload(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        
+        try {
+            const extension = file.name.split('.').pop().toLowerCase();
+            let entries = [];
+            
+            if (extension === 'csv') {
+                const text = await file.text();
+                entries = this.parseScheduleCSV(text);
+            } else if (extension === 'xlsx' || extension === 'xls') {
+                const data = await file.arrayBuffer();
+                const workbook = XLSX.read(data);
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+                entries = this.parseScheduleFromArray(jsonData);
+            } else if (extension === 'pdf') {
+                alert('La importación de PDF requiere procesamiento adicional. Por favor use CSV o Excel.');
+                event.target.value = '';
+                return;
+            }
+            
+            if (entries.length > 0) {
+                store.addSubstitutionSchedule(entries);
+                alert(`${entries.length} entradas del cuadro importadas correctamente.`);
+                this.renderSettings();
+            } else {
+                alert('No se encontraron entradas en el archivo.');
+            }
+        } catch (error) {
+            console.error('Error al importar cuadro:', error);
+            alert('Error al importar el archivo. Verifique el formato.');
+        }
+        
+        event.target.value = '';
+    }
+    
+    parseScheduleCSV(text) {
+        const lines = text.split(/\r?\n/).filter(line => line.trim());
+        const entries = [];
+        
+        if (lines.length === 0) return entries;
+        
+        // Detectar y parsear headers
+        const firstLine = lines[0];
+        const delimiter = firstLine.includes(';') ? ';' : ',';
+        const headers = firstLine.split(delimiter).map(h => h.trim().toLowerCase());
+        
+        // Mapeo de posiciones basado en headers
+        const columnMap = {
+            teacher: -1,
+            lastName: -1,
+            firstName: -1,
+            day: -1,
+            startTime: -1,
+            endTime: -1,
+            options: -1
+        };
+        
+        headers.forEach((header, index) => {
+            if (header.includes('profesor') || header.includes('docente') || header.includes('nombre completo')) {
+                columnMap.teacher = index;
+            } else if (header.includes('apellido') && !header.includes('nombre')) {
+                columnMap.lastName = index;
+            } else if ((header.includes('nombre') || header.includes('name')) && !header.includes('apellido')) {
+                columnMap.firstName = index;
+            } else if (header.includes('día') || header.includes('dia') || header.includes('day')) {
+                columnMap.day = index;
+            } else if (header.includes('inicio') || header.includes('start') || header.includes('desde')) {
+                columnMap.startTime = index;
+            } else if (header.includes('fin') || header.includes('end') || header.includes('hasta') || header.includes('final')) {
+                columnMap.endTime = index;
+            } else if (header.includes('opciones') || header.includes('tipo') || header.includes('aula') || header.includes('grupo') || header.includes('observaciones')) {
+                columnMap.options = index;
+            }
+        });
+        
+        // Si no se detectaron headers, usar posiciones por defecto (pero considerando formato "Apellidos, Nombre")
+        const hasHeaders = columnMap.teacher !== -1 || columnMap.day !== -1 || columnMap.startTime !== -1;
+        const dataStartIndex = hasHeaders ? 1 : 0;
+        
+        for (let i = dataStartIndex; i < lines.length; i++) {
+            const line = lines[i];
+            const parts = line.split(delimiter).map(p => p.trim());
+            
+            if (parts.length < 3) continue;
+            
+            let teacher = '';
+            let day = '';
+            let startTime = '';
+            let endTime = '';
+            let options = '';
+            
+            if (hasHeaders) {
+                // Usar mapeo por headers
+                if (columnMap.teacher !== -1) {
+                    teacher = parts[columnMap.teacher] || '';
+                } else if (columnMap.lastName !== -1 && columnMap.firstName !== -1) {
+                    // Formato: Apellidos, Nombre en columnas separadas
+                    const lastName = parts[columnMap.lastName] || '';
+                    const firstName = parts[columnMap.firstName] || '';
+                    teacher = lastName && firstName ? `${lastName}, ${firstName}` : lastName || firstName;
+                }
+                
+                day = columnMap.day !== -1 ? (parts[columnMap.day] || '') : '';
+                startTime = columnMap.startTime !== -1 ? (parts[columnMap.startTime] || '') : '';
+                endTime = columnMap.endTime !== -1 ? (parts[columnMap.endTime] || '') : '';
+                options = columnMap.options !== -1 ? (parts[columnMap.options] || '') : '';
+            } else {
+                // Sin headers - detectar formato automáticamente
+                // Si la primera columna contiene coma, probablemente sea "Apellidos, Nombre"
+                if (parts[0].includes(',')) {
+                    teacher = parts[0];
+                    day = parts[1] || '';
+                    startTime = parts[2] || '';
+                    endTime = parts[3] || '';
+                    options = parts[4] || '';
+                } else if (parts.length >= 5) {
+                    // Formato: Apellidos | Nombre | Día | Hora Inicio | Hora Fin
+                    const possibleDay = parts[2].toLowerCase();
+                    const isDay = ['lunes', 'martes', 'miércoles', 'miercoles', 'jueves', 'viernes', 'sábado', 'sabado', 'domingo'].includes(possibleDay);
+                    
+                    if (isDay) {
+                        const lastName = parts[0];
+                        const firstName = parts[1];
+                        teacher = `${lastName}, ${firstName}`;
+                        day = parts[2];
+                        startTime = parts[3];
+                        endTime = parts[4];
+                        options = parts[5] || '';
+                    } else {
+                        // Formato por posición simple
+                        teacher = parts[0];
+                        day = parts[1];
+                        startTime = parts[2];
+                        endTime = parts[3];
+                        options = parts[4] || '';
+                    }
+                } else {
+                    // Fallback a posiciones fijas
+                    teacher = parts[0] || '';
+                    day = parts[1] || '';
+                    startTime = parts[2] || '';
+                    endTime = parts[3] || '';
+                    options = parts[4] || '';
+                }
+            }
+            
+            // Normalizar horas (quitar espacios, asegurar formato HH:MM)
+            startTime = startTime.replace(/\s/g, '');
+            endTime = endTime.replace(/\s/g, '');
+            
+            // Asegurar que las horas tengan formato HH:MM
+            if (startTime && !startTime.includes(':')) {
+                if (startTime.length === 3) startTime = startTime[0] + ':' + startTime.slice(1);
+                else if (startTime.length === 4) startTime = startTime.slice(0, 2) + ':' + startTime.slice(2);
+            }
+            if (endTime && !endTime.includes(':')) {
+                if (endTime.length === 3) endTime = endTime[0] + ':' + endTime.slice(1);
+                else if (endTime.length === 4) endTime = endTime.slice(0, 2) + ':' + endTime.slice(2);
+            }
+            
+            // Solo agregar si hay datos mínimos
+            if (teacher && (day || startTime)) {
+                entries.push({
+                    teacher: teacher,
+                    day: day,
+                    startTime: startTime,
+                    endTime: endTime,
+                    options: options
+                });
+            }
+        }
+        
+        return entries;
+    }
+    
+    parseScheduleFromArray(data) {
+        const entries = [];
+        const startIndex = data[0] && data[0][0] && data[0][0].toLowerCase().includes('profesor') ? 1 : 0;
+        
+        for (let i = startIndex; i < data.length; i++) {
+            const row = data[i];
+            if (row && row.length >= 4 && row[0]) {
+                entries.push({
+                    teacher: row[0],
+                    day: row[1],
+                    startTime: row[2],
+                    endTime: row[3],
+                    options: row[4] || ''
+                });
+            }
+        }
+        
+        return entries;
+    }
+    
+    // Mostrar todas las materias en un modal
+    showAllSubjects() {
+        const subjects = store.state.subjects || [];
+        
+        if (subjects.length === 0) {
+            alert('No hay materias importadas.');
+            return;
+        }
+        
+        // Crear modal
+        const modal = document.createElement('div');
+        modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;';
+        
+        const content = document.createElement('div');
+        content.style.cssText = 'background: white; padding: 2rem; border-radius: 12px; max-width: 900px; width: 90%; max-height: 80vh; overflow-y: auto;';
+        
+        const sortedSubjects = [...subjects].sort((a, b) => {
+            const teacher = (a.teacher || '').localeCompare(b.teacher || '', 'es');
+            if (teacher !== 0) return teacher;
+            return (a.time || '').localeCompare(b.time || '', 'es');
+        });
+        
+        content.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3>Materias Importadas (${subjects.length})</h3>
+                <button id="close-modal" class="btn" style="background: var(--secondary); color: white;">Cerrar</button>
+            </div>
+            <div class="subjects-table-wrap" style="border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;">
+                <table class="subjects-table" style="width: 100%; border-collapse: collapse; font-size: 0.9rem;">
+                    <thead style="background: #f9fafb;">
+                        <tr>
+                            <th style="padding: 0.75rem; text-align: left; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb;">Profesor</th>
+                            <th style="padding: 0.75rem; text-align: left; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb;">Día</th>
+                            <th style="padding: 0.75rem; text-align: left; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb;">Hora Inicio</th>
+                            <th style="padding: 0.75rem; text-align: left; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb;">Hora Fin</th>
+                            <th style="padding: 0.75rem; text-align: left; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb;">Asignatura</th>
+                            <th style="padding: 0.75rem; text-align: left; font-weight: 600; color: #374151; border-bottom: 1px solid #e5e7eb;">Curso/Grupo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${sortedSubjects.map(subject => {
+                            // Separar el campo time en inicio y fin
+                            let startTime = 'N/D';
+                            let endTime = 'N/D';
+                            if (subject.time && subject.time !== 'N/D') {
+                                // Limpiar espacios y buscar el guión
+                                const cleanTime = subject.time.trim();
+                                const timeParts = cleanTime.split('-').map(p => p.trim());
+                                startTime = timeParts[0] || 'N/D';
+                                endTime = timeParts[1] || 'N/D';
+                            }
+                            return `
+                            <tr style="border-bottom: 1px solid #f3f4f6;">
+                                <td style="padding: 0.75rem; font-weight: 500; color: #1f2937;">${subject.teacher || 'N/D'}</td>
+                                <td style="padding: 0.75rem;">
+                                    <span style="background: #f3f4f6; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.875rem; color: #374151;">${subject.day || 'N/D'}</span>
+                                </td>
+                                <td style="padding: 0.75rem; color: #4b5563;">${startTime}</td>
+                                <td style="padding: 0.75rem; color: #4b5563;">${endTime}</td>
+                                <td style="padding: 0.75rem;">
+                                    <span style="color: #4f46e5; font-weight: 500;">${subject.subject || 'N/D'}</span>
+                                </td>
+                                <td style="padding: 0.75rem; color: #1f2937; font-weight: 500;">${subject.courseGroup || 'N/D'}</td>
+                            </tr>
+                        `}).join('')}
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+        
+        document.getElementById('close-modal').onclick = () => modal.remove();
+        modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+    }
+    
+    // Borrar todas las materias
+    clearSubjects() {
+        if (confirm('¿Está seguro de que desea borrar todas las materias importadas?')) {
+            store.state.subjects = [];
+            localStorage.setItem('subjects', JSON.stringify([]));
+            alert('Materias borradas correctamente.');
+            this.renderSettings();
+        }
+    }
+    
+    getDayOfWeekFromDate(dateStr) {
+        const date = new Date(dateStr);
+        const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        return days[date.getDay()];
+    }
+
+    // Mostrar el cuadro de sustituciones importado en un modal
+    showSubstitutionSchedule() {
+        const schedule = store.state.substitutionSchedule || [];
+        
+        if (schedule.length === 0) {
+            alert('No hay cuadro de sustituciones importado.');
+            return;
+        }
+        
+        // Crear modal
+        const modal = document.createElement('div');
+        modal.style.cssText = 'position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); display: flex; align-items: center; justify-content: center; z-index: 1000;';
+        
+        const content = document.createElement('div');
+        content.style.cssText = 'background: white; padding: 2rem; border-radius: 12px; max-width: 1000px; width: 90%; max-height: 80vh; overflow-y: auto;';
+        
+        // Agrupar por día para mejor visualización
+        const daysOrder = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
+        const groupedByDay = {};
+        
+        schedule.forEach(entry => {
+            const day = entry.day || 'Otro';
+            if (!groupedByDay[day]) {
+                groupedByDay[day] = [];
+            }
+            groupedByDay[day].push(entry);
+        });
+        
+        // Ordenar los días según daysOrder
+        const sortedDays = Object.keys(groupedByDay).sort((a, b) => {
+            const indexA = daysOrder.indexOf(a);
+            const indexB = daysOrder.indexOf(b);
+            if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+            if (indexA !== -1) return -1;
+            if (indexB !== -1) return 1;
+            return a.localeCompare(b);
+        });
+        
+        let tableContent = '';
+        sortedDays.forEach(day => {
+            const entries = groupedByDay[day];
+            entries.sort((a, b) => a.startTime.localeCompare(b.startTime));
+            
+            tableContent += `
+                <tr style="background: #f9fafb; font-weight: 600;">
+                    <td colspan="4" style="padding: 0.75rem 1rem; color: #4f46e5; border-bottom: 1px solid #e5e7eb;">${day}</td>
+                </tr>
+            `;
+            
+            entries.forEach(entry => {
+                tableContent += `
+                    <tr>
+                        <td style="padding: 0.75rem 1rem; border-bottom: 1px solid #f3f4f6;">${entry.teacher}</td>
+                        <td style="padding: 0.75rem 1rem; border-bottom: 1px solid #f3f4f6;">${entry.startTime}</td>
+                        <td style="padding: 0.75rem 1rem; border-bottom: 1px solid #f3f4f6;">${entry.endTime}</td>
+                        <td style="padding: 0.75rem 1rem; border-bottom: 1px solid #f3f4f6;">${entry.options || '-'}</td>
+                    </tr>
+                `;
+            });
+        });
+        
+        content.innerHTML = `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h3>Cuadro de Sustituciones (${schedule.length} entradas)</h3>
+                <button id="close-schedule-modal" class="btn" style="background: #6b7280; color: white;">Cerrar</button>
+            </div>
+            <div style="overflow-x: auto;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.875rem;">
+                    <thead>
+                        <tr style="background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: white;">
+                            <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600;">Profesor</th>
+                            <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600;">Hora Inicio</th>
+                            <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600;">Hora Fin</th>
+                            <th style="padding: 0.75rem 1rem; text-align: left; font-weight: 600;">Opciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${tableContent}
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
+        modal.appendChild(content);
+        document.body.appendChild(modal);
+        
+        // Cerrar modal al hacer click en el botón o fuera del contenido
+        document.getElementById('close-schedule-modal').onclick = () => modal.remove();
+        modal.onclick = (e) => {
+            if (e.target === modal) modal.remove();
+        };
+    }
+}
+
+new App();
