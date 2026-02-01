@@ -157,7 +157,6 @@ class App {
             
             const scheduleItem = existingSub ? existingSub.schedule.find(s => s.time === timeRange) : null;
             const substituteName = scheduleItem?.substitute;
-            const exceptionalSubstituteName = scheduleItem?.exceptionalSubstitute;
             const subId = existingSub?.id;
 
             if (slot.isBreak) {
@@ -170,27 +169,17 @@ class App {
                 `;
             }
 
-            const hasSub = !!(substituteName || exceptionalSubstituteName);
+            const hasSub = !!substituteName;
             const rowStyle = hasSub ? 'background: #f0fdf4;' : 'cursor: pointer;';
             const rowOnClick = hasSub ? '' : `onclick="app.openSubstitutionFromDashboard('${teacher.id}', '${date}', '${slot.start}', '${slot.end}')"`;
             const rowHover = hasSub ? '' : 'onmouseover="this.style.background=\'#f9fafb\'" onmouseout="this.style.background=\'\'"';
 
-            // Construir celda de sustitutos (puede haber uno o dos)
-            let substituteCellContent = '';
-            if (substituteName) {
-                substituteCellContent += `<div style="font-size: 0.75rem; color: #166534; font-weight: 500;">${substituteName}</div>`;
-            }
-            if (exceptionalSubstituteName) {
-                substituteCellContent += `<div style="font-size: 0.7rem; color: #7c3aed; font-weight: 500; margin-top: 2px;">${exceptionalSubstituteName} (CE)</div>`;
-            }
-
             const substituteCell = hasSub 
-                ? `<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.5rem;">
-                     <div style="cursor: pointer; flex: 1;"
+                ? `<div style="display: flex; justify-content: space-between; align-items: center; gap: 0.5rem;">
+                     <span 
+                        style="font-size: 0.75rem; color: #166534; font-weight: 500; cursor: pointer; border-bottom: 1px dashed #166534; flex: 1;"
                         onclick="event.stopPropagation(); app.editSubstitutionSlot('${teacher.id}', '${date}', '${slot.start}', '${slot.end}', ${subId})"
-                        title="Click para cambiar sustituto">
-                        ${substituteCellContent}
-                     </div>
+                        title="Click para cambiar sustituto">${substituteName}</span>
                      <button onclick="event.stopPropagation(); app.deleteSubstitutionFromDashboard(${subId}, '${teacher.id}', '${date}')" 
                              style="background: none; border: none; cursor: pointer; color: #dc2626; padding: 0; flex-shrink: 0;">
                          <i class="ph ph-trash" style="font-size: 0.875rem;"></i>
@@ -307,14 +296,6 @@ class App {
                     const subTeacher = store.state.teachers.find(t => t.name === slot.substitute);
                     if (subTeacher) {
                         document.getElementById('substitute-teacher').value = subTeacher.id;
-                    }
-                }
-                
-                // Seleccionar el sustituto excepcional si existe
-                if (slot.exceptionalSubstitute) {
-                    const excSubTeacher = store.state.teachers.find(t => t.name === slot.exceptionalSubstitute);
-                    if (excSubTeacher) {
-                        document.getElementById('exceptional-substitute').value = excSubTeacher.id;
                     }
                 }
             }
@@ -578,25 +559,12 @@ class App {
 
                         <!-- Profesor Sustituto -->
                         <div style="margin-bottom: 1.25rem;">
-                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Profesor Sustituto</label>
-                            <select id="substitute-teacher"
+                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Profesor Sustituto *</label>
+                            <select id="substitute-teacher" required
                                     style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem;">
                                 <option value="">Seleccionar sustituto...</option>
                             </select>
                             <div id="substitute-warning" style="margin-top: 0.25rem; font-size: 0.8rem; color: #dc2626; display: none;"></div>
-                        </div>
-
-                        <!-- Sustituto Casos Excepcionales -->
-                        <div style="margin-bottom: 1.25rem;">
-                            <label style="display: block; margin-bottom: 0.5rem; font-weight: 500; color: #374151;">Sustituto Casos Excepcionales</label>
-                            <select id="exceptional-substitute"
-                                    style="width: 100%; padding: 0.75rem; border: 1px solid #d1d5db; border-radius: 0.375rem; font-size: 0.875rem;">
-                                <option value="">Seleccionar sustituto excepcional...</option>
-                                ${teacherOptions}
-                            </select>
-                            <div style="margin-top: 0.25rem; font-size: 0.75rem; color: #6b7280; font-style: italic;">
-                                Todos los profesores del centro disponibles para casos excepcionales
-                            </div>
                         </div>
 
                         <!-- Curso y Grupo/Materia -->
@@ -704,8 +672,9 @@ class App {
                 const subjectTeacher = (s.teacher || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
                 const searchTeacher = teacherName.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
                 
-                // Comparación exacta de nombres para evitar confusiones
-                const matchesTeacher = subjectTeacher === searchTeacher;
+                const matchesTeacher = subjectTeacher === searchTeacher || 
+                                      subjectTeacher.includes(searchTeacher) || 
+                                      searchTeacher.includes(subjectTeacher);
                 
                 const normalizedSubjectDay = this.normalizeDay(s.day).toLowerCase();
                 const normalizedSearchDay = dayOfWeek.toLowerCase();
@@ -753,7 +722,7 @@ class App {
             }
         }
         
-        infoDiv.innerHTML = infoText || 'Sin información detallada';
+        infoDiv.innerHTML = `<strong>${teacher.name}</strong><br>${infoText || 'Sin información detallada'}`;
         
         this.updateSubstituteTeachers();
         this.updateCourseSubjectInfo();
@@ -1001,76 +970,39 @@ class App {
         const endTime = document.getElementById('end-time').value;
         const absentTeacherId = document.getElementById('absent-teacher').value;
         const substituteTeacherId = document.getElementById('substitute-teacher').value;
-        const exceptionalSubstituteId = document.getElementById('exceptional-substitute').value;
         const courseSubject = document.getElementById('course-subject').value;
         const reason = document.getElementById('reason').value;
         
         // Validations
-        if (!date || !startTime || !endTime || !absentTeacherId || !courseSubject) {
+        if (!date || !startTime || !endTime || !absentTeacherId || !substituteTeacherId || !courseSubject) {
             alert('Por favor, complete todos los campos obligatorios');
             return;
         }
         
-        // Validar que al menos un sustituto esté seleccionado
-        if (!substituteTeacherId && !exceptionalSubstituteId) {
-            alert('Debe seleccionar al menos un profesor sustituto (Profesor Sustituto o Sustituto Casos Excepcionales)');
-            return;
-        }
-        
         // Validate substitute is not the absent teacher
-        if (substituteTeacherId && String(substituteTeacherId) === String(absentTeacherId)) {
+        if (String(substituteTeacherId) === String(absentTeacherId)) {
             alert('El profesor sustituto no puede ser el mismo que el profesor ausente');
-            return;
-        }
-        
-        // Validate exceptional substitute is not the absent teacher
-        if (exceptionalSubstituteId && String(exceptionalSubstituteId) === String(absentTeacherId)) {
-            alert('El sustituto para casos excepcionales no puede ser el mismo que el profesor ausente');
             return;
         }
         
         // Validate substitute is not already assigned at this time
         const assignedTeachers = this.getTeachersSubstitutingAtTime(date, startTime, endTime);
-        if (substituteTeacherId && assignedTeachers.includes(String(substituteTeacherId))) {
+        if (assignedTeachers.includes(String(substituteTeacherId))) {
             const subTeacher = store.state.teachers.find(t => String(t.id) === String(substituteTeacherId));
-            alert(`${subTeacher?.name || 'Este profesor'} ya está asignado a otra sustitución en este horario`);
-            return;
-        }
-        
-        // Validate exceptional substitute is not already assigned at this time
-        if (exceptionalSubstituteId && assignedTeachers.includes(String(exceptionalSubstituteId))) {
-            const subTeacher = store.state.teachers.find(t => String(t.id) === String(exceptionalSubstituteId));
             alert(`${subTeacher?.name || 'Este profesor'} ya está asignado a otra sustitución en este horario`);
             return;
         }
         
         // Validate substitute is not marked as absent on this date
         const absentTeachersForDate = this.getAbsentTeachersForDate(date);
-        if (substituteTeacherId && absentTeachersForDate.includes(String(substituteTeacherId))) {
+        if (absentTeachersForDate.includes(String(substituteTeacherId))) {
             const subTeacher = store.state.teachers.find(t => String(t.id) === String(substituteTeacherId));
             alert(`${subTeacher?.name || 'Este profesor'} está marcado como ausente en esta fecha y no puede sustituir a otros`);
             return;
         }
         
-        // Validate exceptional substitute is not marked as absent on this date
-        if (exceptionalSubstituteId && absentTeachersForDate.includes(String(exceptionalSubstituteId))) {
-            const subTeacher = store.state.teachers.find(t => String(t.id) === String(exceptionalSubstituteId));
-            alert(`${subTeacher?.name || 'Este profesor'} está marcado como ausente en esta fecha y no puede sustituir a otros`);
-            return;
-        }
-        
         const absentTeacher = store.state.teachers.find(t => String(t.id) === String(absentTeacherId));
-        const substituteTeacher = substituteTeacherId ? store.state.teachers.find(t => String(t.id) === String(substituteTeacherId)) : null;
-        const exceptionalSubstitute = exceptionalSubstituteId ? store.state.teachers.find(t => String(t.id) === String(exceptionalSubstituteId)) : null;
-        
-        // Construir lista de sustitutos
-        let substitutesList = [];
-        if (substituteTeacher) {
-            substitutesList.push(substituteTeacher.name);
-        }
-        if (exceptionalSubstitute) {
-            substitutesList.push(exceptionalSubstitute.name + ' (CE)');
-        }
+        const substituteTeacher = store.state.teachers.find(t => String(t.id) === String(substituteTeacherId));
         
         const substitution = {
             teacherId: absentTeacher.id,
@@ -1079,17 +1011,19 @@ class App {
             reason: reason,
             schedule: [{
                 time: `${startTime} - ${endTime}`,
-                substitute: substituteTeacher ? substituteTeacher.name : null,
-                exceptionalSubstitute: exceptionalSubstitute ? exceptionalSubstitute.name : null,
-                allSubstitutes: substitutesList,
+                substitute: substituteTeacher.name,
                 courseGroup: courseSubject.split(' - ')[0] || courseSubject,
                 subject: courseSubject.split(' - ')[1] || ''
             }]
         };
         
         if (subId) {
-            // Update existing - use store.updateSubstitution for proper handling
-            store.updateSubstitution(subId, substitution);
+            // Update existing
+            const idx = store.state.substitutions.findIndex(s => s.id === subId);
+            if (idx !== -1) {
+                store.state.substitutions[idx] = { ...store.state.substitutions[idx], ...substitution };
+                store.save();
+            }
         } else {
             // Create new
             store.addSubstitution(substitution);
@@ -1132,14 +1066,6 @@ class App {
                         document.getElementById('substitute-teacher').value = subTeacher.id;
                     }
                 }
-                
-                // Find and set exceptional substitute teacher
-                if (slot.exceptionalSubstitute) {
-                    const excSubTeacher = store.state.teachers.find(t => t.name === slot.exceptionalSubstitute);
-                    if (excSubTeacher) {
-                        document.getElementById('exceptional-substitute').value = excSubTeacher.id;
-                    }
-                }
             }
             
             document.getElementById('reason').value = sub.reason || '';
@@ -1180,7 +1106,6 @@ class App {
             
             const scheduleItem = existingSub ? existingSub.schedule.find(s => s.time === timeRange) : null;
             const substituteName = scheduleItem?.substitute;
-            const exceptionalSubstituteName = scheduleItem?.exceptionalSubstitute;
 
             if (slot.isBreak) {
                 return `
@@ -1192,19 +1117,10 @@ class App {
                 `;
             }
 
-            const hasSub = !!(substituteName || exceptionalSubstituteName);
-
-            // Construir celda de sustitutos para impresión
-            let substituteCellContent = '';
-            if (substituteName) {
-                substituteCellContent += `<div class="print-substitute-name">${substituteName}</div>`;
-            }
-            if (exceptionalSubstituteName) {
-                substituteCellContent += `<div class="print-exceptional-substitute">${exceptionalSubstituteName} (CE)</div>`;
-            }
+            const hasSub = !!substituteName;
 
             const substituteCell = hasSub 
-                ? substituteCellContent
+                ? `<span class="print-substitute-name">${substituteName}</span>`
                 : '<span class="print-dash">-</span>';
             
             const courseSubject = scheduleItem?.courseGroup && scheduleItem?.subject
