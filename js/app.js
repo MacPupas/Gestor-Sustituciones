@@ -321,9 +321,9 @@ class App {
         }, 100);
     }
 
-    deleteSubstitutionFromDashboard(subId, teacherId, date) {
+    async deleteSubstitutionFromDashboard(subId, teacherId, date) {
         if (confirm('¿Está seguro de que desea eliminar esta sustitución?')) {
-            const success = store.removeSubstitution(subId);
+            const success = await store.removeSubstitution(subId);
             if (success) {
                 this.renderDashboard();
             }
@@ -487,17 +487,12 @@ class App {
         `;
     }
     
-    deleteAllSubstitutionsForTeacher(teacherId, date) {
+    async deleteAllSubstitutionsForTeacher(teacherId, date) {
         if (confirm('¿Está seguro de que desea eliminar TODAS las sustituciones de este profesor para esta fecha?')) {
-            const subsToDelete = store.state.substitutions.filter(s => 
-                s.date === date && String(s.teacherId) === String(teacherId)
-            );
-            
-            subsToDelete.forEach(sub => {
-                store.removeSubstitution(sub.id);
-            });
-            
-            this.navigate('dashboard');
+            const success = await store.removeAllSubstitutionsForTeacherAndDate(teacherId, date);
+            if (success) {
+                this.navigate('dashboard');
+            }
         }
     }
 
@@ -992,7 +987,7 @@ class App {
         return [...new Set(absentTeacherIds)]; // Remove duplicates
     }
 
-    handleNewSubSubmit(e) {
+    async handleNewSubSubmit(e) {
         e.preventDefault();
         
         const subId = document.getElementById('sub-id')?.value;
@@ -1088,11 +1083,11 @@ class App {
         };
         
         if (subId) {
-            // Update existing - use store.updateSubstitution for proper handling
-            store.updateSubstitution(subId, substitution);
+            // Update existing
+            await store.updateSubstitution(subId, substitution);
         } else {
             // Create new
-            store.addSubstitution(substitution);
+            await store.addSubstitution(substitution);
         }
         
         // Clear state

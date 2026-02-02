@@ -1,0 +1,34 @@
+# Git Ignore
+
+# Variables de entorno
+.env
+.env.local
+.env.production
+
+# Archivos generados durante el build
+js/env-config.js
+
+# Dependencias (si se instalan en el futuro)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+logs
+*.log
+
+# Archivos temporales
+tmp/
+temp/
+*.tmp

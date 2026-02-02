@@ -12,6 +12,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <!-- SheetJS (XLSX) para importar profesores desde Excel -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Supabase Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
         // Configurar worker de PDF.js
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -61,8 +63,13 @@
         </div>
     </main>
 
+    <!-- Variables de entorno (se genera durante el build en Vercel) -->
+    <script src="js/env-config.js"></script>
+    <script src="js/supabase-config.js"></script>
     <script src="js/store.js"></script>
     <script src="js/app.js"></script>
+    <!-- Script de migracion (opcional, quitar despues de migrar) -->
+    <!-- <script src="js/migrar-a-supabase.js"></script> -->
 </body>
 
 </html>
